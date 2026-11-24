@@ -1,0 +1,39 @@
+name: Official CDN live probe (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      installer_url:
+        description: HTTPS download URL for the exact original installer
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  live:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Fetch and validate original installer
+        shell: pwsh
+        env:
+          INSTALLER_URL: ${{ inputs.installer_url }}
+        run: |
+          if (-not $env:INSTALLER_URL.StartsWith("https://")) { throw "HTTPS required" }
+          curl.exe --fail --location --proto '=https' --proto-redir '=https' --output original.exe "$env:INSTALLER_URL"
+          if ($LASTEXITCODE -ne 0) { throw "download failed" }
+          if ((Get-FileHash original.exe -Algorithm SHA256).Hash.ToLower() -ne "cf4b1f6233af2f2cb2d1c0de12f54d07606c3c84c829390b6caccfb2d0d1f04b") { throw "unexpected original installer SHA256" }
+      - name: Fetch genuine package metadata
+        shell: pwsh
+        run: python tools/bootstrap.py --installer original.exe --out packageconfig.json
+      - name: Build and verify official index and one resource
+        shell: pwsh
+        run: |
+          go build -o azurpromilia.exe ./cmd/azurpromilia
+          if ($LASTEXITCODE -ne 0) { throw "build failed" }
+          .\azurpromilia.exe download --installer original.exe --packageconfig packageconfig.json --root probe --probe
+          if ($LASTEXITCODE -ne 0) { throw "live probe failed" }

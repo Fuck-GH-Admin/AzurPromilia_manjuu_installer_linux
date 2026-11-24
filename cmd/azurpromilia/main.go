@@ -8,6 +8,7 @@ import (
  "crypto/aes"
  "crypto/cipher"
  "crypto/md5"
+ "hash/crc32"
  "encoding/base64"
  "encoding/hex"
  "encoding/json"
@@ -174,16 +175,28 @@ func extractZIP(path,root string)error{
   if e=os.Rename(tmp.Name(),p);e!=nil{os.Remove(tmp.Name());return e}
  };return nil
 }
+func verifyExtracted(archive,root string)error{
+ z,e:=zip.OpenReader(archive);if e!=nil{return e};defer z.Close()
+ var failed int
+ for _,v:=range z.File{
+  if v.FileInfo().IsDir(){continue}
+  p,e:=safe(root,strings.ReplaceAll(v.Name,"\\","/"));if e!=nil{return e}
+  f,e:=os.Open(p);if e!=nil{failed++;logf("FAIL extracted %s: %v",v.Name,e);continue}
+  h:=crc32.NewIEEE();n,er:=io.Copy(h,f);f.Close()
+  if er!=nil||uint64(n)!=v.UncompressedSize64||h.Sum32()!=v.CRC32{failed++;logf("FAIL extracted %s",v.Name)}
+ }
+ if failed>0{return fmt.Errorf("%d extracted files invalid or missing",failed)};logf("Extracted ZIP files verified");return nil
+}
 func main(){if err:=run();err!=nil{logf("ERROR: %v",err);os.Exit(1)}}
 func run()error{
  if len(os.Args)<2{return errors.New("usage: azurpromilia download|verify --help")}
  cmd:=os.Args[1];if cmd=="help"||cmd=="--help"{fmt.Println("azurpromilia download --packageconfig response.json --installer original.exe --root GAME [--target released|preload] [--workers 4] [--slice]\nazurpromilia verify --root GAME");return nil}
- fs:=flag.NewFlagSet(cmd,flag.ContinueOnError);root:=fs.String("root","AzurPromilia","game directory");pkgPath:=fs.String("packageconfig","","official packageconfig response JSON");exe:=fs.String("installer","","original installer EXE");target:=fs.String("target","released","released or preload");workers:=fs.Int("workers",4,"parallel downloads");slice:=fs.Bool("slice",false,"select slice package");noExtract:=fs.Bool("no-extract",false,"do not extract ZIP");if e:=fs.Parse(os.Args[2:]);e!=nil{if e==flag.ErrHelp{return nil};return e}
+ fs:=flag.NewFlagSet(cmd,flag.ContinueOnError);root:=fs.String("root","AzurPromilia","game directory");pkgPath:=fs.String("packageconfig","","official packageconfig response JSON");exe:=fs.String("installer","","original installer EXE");target:=fs.String("target","released","released or preload");workers:=fs.Int("workers",4,"parallel downloads");slice:=fs.Bool("slice",false,"select slice package");noExtract:=fs.Bool("no-extract",false,"do not extract ZIP");probe:=fs.Bool("probe",false,"only fetch official index and one smallest nonempty resource; do not install");versionFlag:=fs.String("version","","preload version for verification");if e:=fs.Parse(os.Args[2:]);e!=nil{if e==flag.ErrHelp{return nil};return e}
  if *workers<1||*workers>32{return errors.New("workers must be 1..32")}
  abs,e:=filepath.Abs(*root);if e!=nil{return e};if e=os.MkdirAll(abs,0755);e!=nil{return e};abs,e=filepath.EvalSymlinks(abs);if e!=nil{return e}
  ctx,cancel:=signal.NotifyContext(context.Background(),os.Interrupt);defer cancel()
  state:=filepath.Join(abs,".azurpromilia");manifestPath:=filepath.Join(state,"manifest.json");var m Manifest
- if cmd=="verify"{b,e:=os.ReadFile(manifestPath);if e!=nil{return e};if e=json.Unmarshal(b,&m);e!=nil{return e};work:=abs;if m.Archive!=nil{work=filepath.Join(state,"slices",m.Version);if !verify(filepath.Join(state,"archives",m.Version+".zip"),*m.Archive){return errors.New("merged archive missing or invalid")};logf("Archive checksum valid; extracted game files are not covered by slice manifest")};return runFiles(ctx,work,m,*workers,true)}
+ if cmd=="verify"{if *target=="preload"{if *versionFlag==""||!regexp.MustCompile("^[a-zA-Z0-9_.-]+$").MatchString(*versionFlag){return errors.New("verify preload requires --version")};manifestPath=filepath.Join(state,"preload-"+*versionFlag+".json")}else if *target!="released"{return errors.New("invalid target")};b,e:=os.ReadFile(manifestPath);if e!=nil{return e};if e=json.Unmarshal(b,&m);e!=nil{return e};work:=abs;if *target=="preload"{work=filepath.Join(abs,"_pre_download",m.Version)};if m.Archive!=nil{archive:=filepath.Join(state,"archives",m.Version+".zip");if !verify(archive,*m.Archive){return errors.New("merged archive missing or invalid")};if !*noExtract{if e=verifyExtracted(archive,work);e!=nil{return e}};work=filepath.Join(state,"slices",m.Version)};return runFiles(ctx,work,m,*workers,true)}
  if cmd!="download"{return errors.New("unknown command")};if *pkgPath==""||*exe==""{return errors.New("--packageconfig and --installer required")}
  key,iv,e:=installerKeys(*exe);if e!=nil{return e};raw,e:=os.ReadFile(*pkgPath);if e!=nil{return e}
  var response Response;if e=json.Unmarshal(raw,&response);e!=nil{return e};if response.Code!=0{return fmt.Errorf("official API error %d",response.Code)}
@@ -198,6 +211,7 @@ func run()error{
  index:=Entry{version+"-"+strconv.Itoa(typ),pkg.URL,pkg.MD5,pkg.Size}
  if e=download(ctx,indexRoot,index,cdn,&network);e!=nil{return e};raw,e=os.ReadFile(filepath.Join(indexRoot,index.Name));if e!=nil{return e}
  plain,e:=decrypt(raw,key,iv);if e!=nil{return e};m,e=parseIndex(plain,*slice);if e!=nil{return e};m.Version=version;m.CDN=cdn
+ if *probe{var chosen *Entry;for _,f:=range m.Files{if f.Size>0&&(chosen==nil||f.Size<chosen.Size){v:=f;chosen=&v}};if chosen==nil{return errors.New("no nonempty resources")};if chosen.Size>64<<20{return errors.New("smallest resource exceeds 64 MiB probe limit")};logf("LIVE PROBE: %s, %d bytes",chosen.Name,chosen.Size);if e=download(ctx,filepath.Join(state,"probe"),*chosen,cdn,&network);e!=nil{return e};logf("LIVE PROBE OK: official index and resource verified");return nil}
  work:=abs;if *target=="preload"{work=filepath.Join(abs,"_pre_download",version);manifestPath=filepath.Join(state,"preload-"+version+".json")};if *slice{work=filepath.Join(state,"slices",version)}
  if e=runFiles(ctx,work,m,*workers,false);e!=nil{return e}
  if m.Archive!=nil{out:=filepath.Join(state,"archives",version+".zip");if e=merge(work,m,out);e!=nil{return e};logf("ZIP verified: %s",out);if !*noExtract{dest:=abs;if *target=="preload"{dest=filepath.Join(abs,"_pre_download",version)};if e=extractZIP(out,dest);e!=nil{return e}}}else{for _,d:=range m.Directories{p,e:=safe(work,d);if e!=nil{return e};if e=os.MkdirAll(p,0755);e!=nil{return e}}}

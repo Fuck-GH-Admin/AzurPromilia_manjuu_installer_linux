@@ -16,6 +16,8 @@ jobs:
           cache: false
       - run: go test -race ./...
       - run: go vet ./...
+      - run: python3 -m py_compile tools/bootstrap.py
+      - run: node --check tools/fetch_packageconfig.cjs
       - run: |
           mkdir -p dist
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o dist/azurpromilia-linux-amd64 ./cmd/azurpromilia

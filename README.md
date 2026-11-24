@@ -30,7 +30,11 @@ python3 tools/bootstrap.py --installer /path/to/original.exe --out packageconfig
 ./azurpromilia verify --root "$HOME/Games/AzurPromilia"
 ```
 
-默认选择 released 的 packageType=2 逐文件包，--slice 选择 type=1 切片 ZIP 包；--target preload 选择预下载完整资源索引（独立目录，不自动应用）；--no-extract 仅合并切片并校验 ZIP。原始安装器用于本地读取索引解码参数，不提交原始二进制或参数。每个文件校验后才重命名，失败退出非零；重复运行会跳过已通过验证的文件。切片模式 verify 验证切片及合并 ZIP，不等价于验证已解压的逐文件内容。
+默认选择 released 的 packageType=2 逐文件包，--slice 选择 type=1 切片 ZIP 包；--target preload 选择预下载完整资源索引（独立目录，不自动应用）；--no-extract 仅合并切片并校验 ZIP。原始安装器用于本地读取索引解码参数，不提交原始二进制或参数。每个文件校验后才重命名，失败退出非零；重复运行会跳过已通过验证的文件。切片模式 verify 验证切片和合并 ZIP，并按已验证 ZIP 中的 CRC32 与大小检查解压文件；仅下载 ZIP 时使用 verify --no-extract。预下载校验使用 verify --target preload --version VERSION_CODE。
+
+## 实服探测
+
+Actions 中的 Official CDN live probe 支持手动输入该原始安装器的官方 HTTPS URL；先核对样本 SHA256，再使用官方组件取得包清单、下载并校验实际索引及一个不超过 64 MiB 的资源。不会上传游戏文件、包清单或密钥。它与完整下载命令独立，只是实服兼容性检查。尚未运行成功，不应视为已验收。
 
 ## 证据与限制
 
