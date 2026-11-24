@@ -1,0 +1,28 @@
+name: Linux build and test
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - run: go test -race ./...
+      - run: go vet ./...
+      - run: |
+          mkdir -p dist
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o dist/azurpromilia-linux-amd64 ./cmd/azurpromilia
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o dist/azurpromilia-linux-arm64 ./cmd/azurpromilia
+          ./dist/azurpromilia-linux-amd64 help
+          cd dist && sha256sum azurpromilia-linux-* > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: azurpromilia-linux
+          path: dist/

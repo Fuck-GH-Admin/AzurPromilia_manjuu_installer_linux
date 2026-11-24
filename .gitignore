@@ -1,0 +1,7 @@
+config.json
+packageconfig.json
+*.exe
+*.part
+/azurpromilia
+/dist/
+/.config-extract/
