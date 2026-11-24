@@ -11,6 +11,16 @@ go build -trimpath -o azurpromilia ./cmd/azurpromilia
 
 GitHub Actions 在每次 push 时运行 Go 测试、vet 和 Linux amd64/arm64 构建，并上传二进制与 SHA256SUMS。
 
+## 获取真实包清单（实验性一次性引导）
+
+使用自己的原始安装器，在 Windows 或 Linux Wine 环境执行：
+
+```sh
+python3 tools/bootstrap.py --installer /path/to/original.exe --out packageconfig.json
+```
+
+引导器只调用原版 Electron/N-API 组件生成正常匿名包清单请求，调用官方 API，不输出签名密钥；暂未实服验收。若官方接口拒绝匿名请求，停止并报告错误，不尝试绕过。下载器本身仍完全原生 Linux，不依赖 Wine。亦可直接导入自己合法获得的原始包清单。不要公开 packageconfig.json（其中可能有临时 CDN URL）。
+
 ## 下载
 
 将你正常使用的官方启动器获得的 packageconfig JSON 响应保存为本地 packageconfig.json。不要上传包含账号、令牌或签名的请求信息。本程序暂未实现官方原生 API 签名，不会伪造账号或绕过授权。
