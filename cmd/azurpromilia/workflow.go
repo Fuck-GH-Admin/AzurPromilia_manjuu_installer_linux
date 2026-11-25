@@ -493,55 +493,119 @@ func zipExtractedEntries(path string) ([]ExtractedEntry, error) {
 		return nil, err
 	}
 	defer z.Close()
-	out := make([]ExtractedEntry, 0, len(z.File))
-	seen := make(map[string]bool, len(z.File))
+
 	if len(z.File) > 100000 {
 		return nil, fmt.Errorf("ZIP has too many entries: %d", len(z.File))
 	}
+	out := make([]ExtractedEntry, 0, len(z.File))
+	seen := make(map[string]bool, len(z.File))
+	files := make(map[string]bool, len(z.File))
+	dirs := make(map[string]bool, len(z.File))
+	var total int64
+
 	for _, f := range z.File {
-		if f.FileInfo().IsDir() {
-			continue
+		name := strings.ReplaceAll(f.Name, "\\", "/")
+		isDir := f.FileInfo().IsDir()
+		if isDir {
+			name = strings.TrimSuffix(name, "/")
+		}
+		if name == "" || reservedGamePath(name) {
+			return nil, fmt.Errorf("ZIP uses reserved or empty path: %s", f.Name)
 		}
 		if f.Mode()&os.ModeSymlink != 0 {
 			return nil, fmt.Errorf("ZIP symlink refused: %s", f.Name)
 		}
-		name := strings.ReplaceAll(f.Name, "\\", "/")
-		key := strings.ToLower(strings.Trim(name, "/"))
-		if key == "" || reservedGamePath(name) {
-			return nil, fmt.Errorf("ZIP uses reserved or empty path: %s", f.Name)
+		modeType := f.Mode().Type()
+		if (!isDir && modeType != 0) || (isDir && modeType != 0 && modeType != os.ModeDir) {
+			return nil, fmt.Errorf("ZIP special file type refused: %s", f.Name)
 		}
+		if _, err := safe(os.TempDir(), name); err != nil {
+			return nil, err
+		}
+
+		key := strings.ToLower(name)
 		if seen[key] {
 			return nil, fmt.Errorf("ZIP contains duplicate path: %s", f.Name)
 		}
 		seen[key] = true
-		if _, err := safe(os.TempDir(), name); err != nil {
-			return nil, err
+
+		parent := key
+		for {
+			slash := strings.LastIndex(parent, "/")
+			if slash < 0 {
+				break
+			}
+			parent = parent[:slash]
+			if files[parent] {
+				return nil, fmt.Errorf("ZIP path conflicts with file entry: %s", f.Name)
+			}
+			dirs[parent] = true
 		}
-		out = append(out, ExtractedEntry{Name: name, Size: int64(f.UncompressedSize64), CRC32: f.CRC32})
+
+		if isDir {
+			if files[key] {
+				return nil, fmt.Errorf("ZIP directory conflicts with file entry: %s", f.Name)
+			}
+			dirs[key] = true
+			continue
+		}
+		if dirs[key] {
+			return nil, fmt.Errorf("ZIP file conflicts with directory entry: %s", f.Name)
+		}
+		files[key] = true
+
+		if f.UncompressedSize64 >= uint64(maxInt64) {
+			return nil, fmt.Errorf("ZIP entry is too large to extract safely: %s", f.Name)
+		}
+		size := int64(f.UncompressedSize64)
+		if size > maxInt64-total {
+			return nil, errors.New("ZIP total uncompressed size overflows")
+		}
+		total += size
+		out = append(out, ExtractedEntry{Name: name, Size: size, CRC32: f.CRC32})
 	}
 	return out, nil
 }
 
-func verifyExtractedEntries(root string, entries []ExtractedEntry) error {
-	var failed int
-	for _, e := range entries {
-		p, err := safe(root, e.Name)
-		if err != nil {
-			return err
+func extractedEntryValid(root string, entry ExtractedEntry) bool {
+	p, err := safe(root, entry.Name)
+	if err != nil {
+		return false
+	}
+	f, err := os.Open(p)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil || !st.Mode().IsRegular() || st.Size() != entry.Size {
+		return false
+	}
+	h := crc32.NewIEEE()
+	n, err := io.Copy(h, f)
+	return err == nil && n == entry.Size && h.Sum32() == entry.CRC32
+}
+
+func requiredExtractionBytes(root string, entries []ExtractedEntry) (int64, error) {
+	var required int64
+	for _, entry := range entries {
+		if entry.Size < 0 || entry.Size > maxInt64-required {
+			return 0, fmt.Errorf("invalid or overflowing ZIP extraction size at %s", entry.Name)
 		}
-		f, err := os.Open(p)
-		if err != nil {
-			failed++
-			logf("FAIL extracted %s: %v", e.Name, err)
+		if extractedEntryValid(root, entry) {
 			continue
 		}
-		st, statErr := f.Stat()
-		h := crc32.NewIEEE()
-		n, copyErr := io.Copy(h, f)
-		f.Close()
-		if statErr != nil || !st.Mode().IsRegular() || copyErr != nil || n != e.Size || h.Sum32() != e.CRC32 {
+		required += entry.Size
+	}
+	return required, nil
+}
+
+func verifyExtractedEntries(root string, entries []ExtractedEntry) error {
+	var failed int
+	for _, entry := range entries {
+		if !extractedEntryValid(root, entry) {
 			failed++
-			logf("FAIL extracted %s", e.Name)
+			logf("FAIL extracted %s: missing, non-regular, wrong size or CRC32 mismatch", entry.Name)
 		}
 	}
 	if failed > 0 {
