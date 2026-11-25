@@ -317,12 +317,16 @@ func writeJSONAtomic(path string, value any) error {
 }
 
 func saveOfficialIndex(root, version string, encrypted []byte) error {
-	return writeFileAtomic(filepath.Join(root, "_index", version), encrypted, 0644)
+	p, err := safe(root, filepath.ToSlash(filepath.Join("_index", version)))
+	if err != nil { return err }
+	return writeFileAtomic(p, encrypted, 0644)
 }
 
 func saveVersion(root, state string, m Manifest) error {
 	v := versionInfo{Version: m.Version, VersionName: m.VersionName}
-	if err := writeJSONAtomic(filepath.Join(root, "_index", "version"), v); err != nil {
+	p, err := safe(root, filepath.Join("_index", "version"))
+	if err != nil { return err }
+	if err := writeJSONAtomic(p, v); err != nil {
 		return err
 	}
 	return writeJSONAtomic(filepath.Join(state, "version.json"), v)
@@ -705,8 +709,9 @@ func updateRelease(ctx context.Context, root, state, installer string, response 
 	if err != nil {
 		return err
 	}
-	stage := filepath.Join(root, "_pre_download", m.Version)
-	if st, statErr := os.Stat(stage); statErr == nil && st.IsDir() {
+	stage, err := safe(root, filepath.Join("_pre_download", m.Version))
+	if err != nil { return err }
+	if st, statErr := os.Lstat(stage); statErr == nil && st.IsDir() {
 		used, seedErr := seedPreloadFiles(root, stage, m.Files)
 		if seedErr != nil {
 			logf("WARN predownload cache not fully usable: %v", seedErr)
@@ -804,7 +809,8 @@ func preloadRelease(ctx context.Context, root, state, installer string, response
 	for _, f := range cur.Files {
 		currentByName[strings.ToLower(filepath.ToSlash(f.Name))] = strings.ToLower(f.MD5)
 	}
-	stage := filepath.Join(root, "_pre_download", pre.Version)
+	stage, err := safe(root, filepath.Join("_pre_download", pre.Version))
+	if err != nil { return err }
 	if err = os.MkdirAll(stage, 0755); err != nil {
 		return err
 	}
