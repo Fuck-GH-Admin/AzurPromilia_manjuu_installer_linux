@@ -273,3 +273,15 @@ func TestZipExtractedEntriesRejectsFileDirectoryConflict(t *testing.T) {
 		t.Fatal("accepted a file that conflicts with a directory path")
 	}
 }
+
+
+func TestRequiredExtractionBytesRejectsNonRegularTarget(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "asset.bin"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := requiredExtractionBytes(root, []ExtractedEntry{{Name: "asset.bin", Size: 1}})
+	if err == nil {
+		t.Fatal("directory accepted as a ZIP file target")
+	}
+}
