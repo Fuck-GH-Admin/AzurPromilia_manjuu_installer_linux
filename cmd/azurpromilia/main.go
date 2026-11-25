@@ -313,7 +313,7 @@ func runFiles(ctx context.Context, root string, m Manifest, workers int, onlyVer
 	var network, done, verified atomic.Int64
 	var total int64
 	for _, entry := range m.Files {
-		if entry.Size < 0 || entry.Size > maxInt64-total {
+		if entry.Size < 0 || entry.Size >= maxInt64 || entry.Size > maxInt64-total {
 			return fmt.Errorf("invalid or overflowing manifest size at %s", entry.Name)
 		}
 		total += entry.Size
