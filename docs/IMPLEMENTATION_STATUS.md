@@ -136,7 +136,10 @@
 
 这些测试使用本地数据和测试目录，不代表完整游戏 CDN 安装、升级或启动已通过。
 
-GitHub Actions PR 验证已成功：Run #50（`45559651106`，最终文件系统防护与下载模式选择代码）完成 `go test -race ./...`、`go vet ./...`、Python/Node 语法检查、Linux amd64/arm64 构建及 Artifact 上传。Run #36（`45558530809`）也通过了完整工作流代码的首次 CI。Run #50 对应的 PR 已合并到 main。
+GitHub Actions 验证记录：
+
+- 原完整工作流 Run #50（`45559651106`）通过 `go test -race ./...`、`go vet ./...`、Python/Node 检查、Linux amd64/arm64 构建及 Artifact 上传。
+- 第一阶段可靠性改动 Run #111（`45619034089`，head `272ef2f`）再次通过上述全部检查；新增的 fail-fast worker、永久 4xx CDN 回退、磁盘预检查、已验证 `.part` 复用、ZIP 路径/解压保护测试均包含在该次 `go test -race ./...` 中。
 
 ## 5. 验收标准
 
