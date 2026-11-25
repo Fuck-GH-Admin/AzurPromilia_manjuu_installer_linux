@@ -201,7 +201,7 @@ func selectPackageType(downloadMode int, override string, packages []Package) (i
 	if has(want) {
 		return want, nil
 	}
-	if override == "auto" {
+	if override == "auto" && downloadMode != 1 && downloadMode != 2 {
 		if want == 1 && has(2) {
 			return 2, nil
 		}
@@ -347,13 +347,15 @@ func saveManifest(state string, m Manifest) error {
 }
 
 func loadVersion(root, state string) (versionInfo, error) {
-	for _, p := range []string{filepath.Join(root, "_index", "version"), filepath.Join(state, "version.json")} {
+	indexVersion, err := safe(root, filepath.Join("_index", "version"))
+	if err != nil { return versionInfo{}, err }
+	for _, p := range []string{indexVersion, filepath.Join(state, "version.json")} {
 		b, err := os.ReadFile(p)
 		if err != nil {
 			continue
 		}
 		var v versionInfo
-		if json.Unmarshal(b, &v) == nil && v.Version != "" {
+		if json.Unmarshal(b, &v) == nil && regexp.MustCompile("^[a-zA-Z0-9_.-]+$").MatchString(v.Version) && v.Version != "." && v.Version != ".." {
 			return v, nil
 		}
 	}
@@ -378,7 +380,8 @@ func loadOldManifest(root, state, installer, version string) (Manifest, bool, er
 			return candidate, true, nil
 		}
 	}
-	indexPath := filepath.Join(root, "_index", version)
+	indexPath, err := safe(root, filepath.Join("_index", version))
+	if err != nil { return m, false, err }
 	encrypted, err := os.ReadFile(indexPath)
 	if err != nil {
 		return m, false, nil
@@ -590,7 +593,12 @@ func printPackageInfo(response Response) error {
 }
 
 func installRelease(ctx context.Context, root, state, installer string, response Response, mode string, workers int) error {
-	if _, err := os.Stat(filepath.Join(root, "_index", "version")); err == nil {
+	indexVersion, err := safe(root, filepath.Join("_index", "version"))
+	if err != nil { return err }
+	if _, err := os.Lstat(indexVersion); err == nil {
+		return errors.New("this directory already has installed-version metadata; use update or repair")
+	}
+	if _, err := os.Stat(filepath.Join(state, "version.json")); err == nil {
 		return errors.New("this directory already has installed-version metadata; use update or repair")
 	}
 	r := response.Data.Released

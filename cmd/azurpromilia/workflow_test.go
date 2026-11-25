@@ -39,7 +39,7 @@ func TestSelectPackageTypeFromOriginalDownloadMode(t *testing.T) {
 
 func TestSelectPackageTypeFallsBackOnlyWhenAuto(t *testing.T) {
 	packages := []Package{{Type: 2, URL: "https://cdn.invalid/reality", MD5: md5Of([]byte("r")), Size: 1}}
-	if got, err := selectPackageType(1, "auto", packages); err != nil || got != 2 {
+	if got, err := selectPackageType(0, "auto", packages); err != nil || got != 2 {
 		t.Fatalf("auto fallback: got %d, err=%v", got, err)
 	}
 	if _, err := selectPackageType(1, "slice", packages); err == nil {
@@ -138,5 +138,17 @@ func TestZipExtractedEntriesAndVerification(t *testing.T) {
 	if err = os.WriteFile(filepath.Join(dest, "bin/game.exe"), []byte("corrupt"), 0644); err != nil { t.Fatal(err) }
 	if err = verifyExtractedEntries(dest, entries); err == nil {
 		t.Fatal("corrupted extracted file passed verification")
+	}
+}
+
+
+func TestSelectPackageTypeDoesNotOverrideKnownServerMode(t *testing.T) {
+	type1 := []Package{{Type: 1, URL: "https://cdn.invalid/slice", MD5: md5Of([]byte("s")), Size: 1}}
+	type2 := []Package{{Type: 2, URL: "https://cdn.invalid/reality", MD5: md5Of([]byte("r")), Size: 1}}
+	if _, err := selectPackageType(1, "auto", type2); err == nil {
+		t.Fatal("downloadMode=SLICE must not silently fall back to REALITY")
+	}
+	if _, err := selectPackageType(2, "auto", type1); err == nil {
+		t.Fatal("downloadMode=REALITY must not silently fall back to SLICE")
 	}
 }
