@@ -131,11 +131,16 @@ func downloadFile(ctx context.Context,root string,e Entry,cdn []string,network *
   if verify(part,e){return os.Rename(part,p)}
   off:=int64(0);if st,er:=os.Stat(part);er==nil{off=st.Size();if off>=e.Size{if er=os.Remove(part);er!=nil{return er};off=0}}
   if e.Size==0{if err=os.WriteFile(part,nil,0644);err!=nil{return err};if !verify(part,e){return errors.New("empty file checksum mismatch")};return os.Rename(part,p)}
-  req,er:=http.NewRequestWithContext(ctx,"GET",urls[(attempt/3)%len(urls)],nil);if er!=nil{return er}
+  urlIndex := (attempt/3)%len(urls)
+  req,er:=http.NewRequestWithContext(ctx,"GET",urls[urlIndex],nil);if er!=nil{return er}
   if off>0{req.Header.Set("Range",fmt.Sprintf("bytes=%d-",off))}
   res,er:=client.Do(req)
+  nonRetryable := false
   if er==nil{
-   if res.StatusCode==http.StatusPartialContent{
+   if res.StatusCode >= 400 && res.StatusCode < 500 && res.StatusCode != http.StatusRequestTimeout && res.StatusCode != http.StatusTooEarly && res.StatusCode != http.StatusTooManyRequests {
+    er=fmt.Errorf("HTTP %d (non-retryable)",res.StatusCode)
+    nonRetryable=true
+   } else if res.StatusCode==http.StatusPartialContent{
     want:=fmt.Sprintf("bytes %d-%d/%d",off,e.Size-1,e.Size)
     if res.Header.Get("Content-Range")!=want{er=fmt.Errorf("invalid Content-Range: %s",res.Header.Get("Content-Range"))}
    }else if res.StatusCode==http.StatusOK{off=0}else{er=fmt.Errorf("HTTP %d",res.StatusCode)}
@@ -147,6 +152,13 @@ func downloadFile(ctx context.Context,root string,e Entry,cdn []string,network *
    };res.Body.Close()
   }
   if ctx.Err() != nil { return ctx.Err() }
+  if nonRetryable {
+   last=er
+   if urlIndex+1 >= len(urls) { return fmt.Errorf("%s: %w",e.Name,last) }
+   logf("CDN %s rejected %s: %v; trying next CDN", urls[urlIndex], e.Name, last)
+   attempt=(urlIndex+1)*3-1
+   continue
+  }
   if er==nil&&verify(part,e){return os.Rename(part,p)}
   if er==nil{er=errors.New("MD5 mismatch");_ = os.Remove(part)}
   last=er;logf("RETRY %s (%d): %v",e.Name,attempt+1,last)
