@@ -340,7 +340,7 @@ func runFiles(ctx context.Context, root string, m Manifest, workers int, onlyVer
 		}
 		if onlyVerify {
 			if !verify(p, entry) {
-				return errors.New("missing or invalid")
+				return fmt.Errorf("%s: missing or invalid", entry.Name)
 			}
 		} else if !valid[entry.Name] {
 			logf("FILE %s (%d bytes)", entry.Name, entry.Size)
