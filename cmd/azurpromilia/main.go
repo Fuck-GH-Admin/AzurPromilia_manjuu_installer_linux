@@ -8,7 +8,6 @@ import (
  "crypto/aes"
  "crypto/cipher"
  "crypto/md5"
- "hash/crc32"
  "encoding/base64"
  "encoding/hex"
  "encoding/json"
@@ -112,9 +111,17 @@ func getURLs(cdn []string,remote string)([]string,error){
 }
 type counter struct{ n *atomic.Int64 }
 func(c counter)Write(p []byte)(int,error){c.n.Add(int64(len(p)));return len(p),nil}
-func download(ctx context.Context,root string,e Entry,cdn []string,network *atomic.Int64)error{
+func download(ctx context.Context, root string, e Entry, cdn []string, network *atomic.Int64) error {
+	return downloadFile(ctx, root, e, cdn, network, true)
+}
+
+func downloadAfterPreflight(ctx context.Context, root string, e Entry, cdn []string, network *atomic.Int64) error {
+	return downloadFile(ctx, root, e, cdn, network, false)
+}
+
+func downloadFile(ctx context.Context,root string,e Entry,cdn []string,network *atomic.Int64,checkExisting bool)error{
  p,err:=safe(root,e.Name);if err!=nil{return err};if !validMD5(e.MD5)||e.Size<0{return errors.New("invalid file checksum or size")}
- if verify(p,e){return nil}
+ if st, statErr := os.Lstat(p); statErr == nil && !st.Mode().IsRegular() { return fmt.Errorf("download destination is not a regular file: %s", p) } else if statErr != nil && !os.IsNotExist(statErr) { return statErr }; if checkExisting && verify(p,e){return nil}
  if err=os.MkdirAll(filepath.Dir(p),0755);err!=nil{return err}
  part:=p+".part";if st,err:=os.Lstat(part);err==nil&&!st.Mode().IsRegular(){return fmt.Errorf("unsafe partial file %s",part)}
  urls,err:=getURLs(cdn,e.Remote);if err!=nil{return err}
@@ -146,6 +153,7 @@ func download(ctx context.Context,root string,e Entry,cdn []string,network *atom
  }
  return fmt.Errorf("%s: %w",e.Name,last)
 }
+
 func decrypt(data []byte,key,iv string)([]byte,error){
  b,err:=base64.StdEncoding.DecodeString(strings.TrimSpace(string(data)));if err!=nil{return nil,err}
  c,err:=aes.NewCipher([]byte(key));if err!=nil{return nil,err}
@@ -206,55 +214,306 @@ func parseIndex(raw []byte,slice bool)(Manifest,error){
  if hasCounts && (uint64(len(m.Files)) != expectedFiles || uint64(len(m.Directories)) != expectedDirs || uint64(len(m.Files)+len(m.Directories)) != expectedTotal) { return m, fmt.Errorf("per-file index count mismatch: header total=%d files=%d dirs=%d, parsed total=%d files=%d dirs=%d", expectedTotal, expectedFiles, expectedDirs, len(m.Files)+len(m.Directories), len(m.Files), len(m.Directories)) }
  if len(m.Files)==0||slice&&m.Archive==nil{return m,errors.New("empty index or missing ZIP record")};return m,nil
 }
-func runFiles(ctx context.Context,root string,m Manifest,workers int,onlyVerify bool)error{
- ctx,cancel:=context.WithCancel(ctx);defer cancel()
- var net,done,checked,fail atomic.Int64;var total int64
- for _,e:=range m.Files{total+=e.Size}
- jobs:=make(chan Entry);var wg sync.WaitGroup;var first error;var mu sync.Mutex
- stop:=make(chan struct{});defer close(stop)
- go func(){t:=time.NewTicker(time.Second);defer t.Stop();var last int64;for{select{case <-stop:return;case <-t.C:n:=net.Load();logf("PROGRESS %d/%d files | %.2f/%.2f GiB verified | %.2f MiB/s | failed %d",checked.Load(),len(m.Files),float64(done.Load())/(1<<30),float64(total)/(1<<30),float64(n-last)/(1<<20),fail.Load());last=n}}}()
- for i:=0;i<workers;i++{wg.Add(1);go func(){defer wg.Done();for e:=range jobs{
-  p,err:=safe(root,e.Name)
-  if err==nil{if onlyVerify{if !verify(p,e){err=errors.New("missing or invalid")}}else{logf("FILE %s (%d bytes)",e.Name,e.Size);err=download(ctx,root,e,m.CDN,&net)}}
-  checked.Add(1);if err!=nil{fail.Add(1);logf("FAIL %s: %v",e.Name,err);mu.Lock();if first==nil{first=fmt.Errorf("%s: %w",e.Name,err)};mu.Unlock()}else{done.Add(e.Size)}
- }}()}
- send:for _,e:=range m.Files{select{case jobs<-e:case <-ctx.Done():break send}}
- close(jobs);wg.Wait();logf("RESULT %d/%d verified, %d failed; %d bytes transferred",checked.Load()-fail.Load(),len(m.Files),fail.Load(),net.Load())
- if ctx.Err()!=nil{return ctx.Err()};return first
+type fileWorkerStats struct {
+	Completed int64
+	Failed int64
+	Cancelled int64
+	First error
 }
+
+// runFileWorkers owns the worker lifecycle. Download workflows stop dispatching
+// immediately after the first fatal file error and cancel in-flight HTTP requests.
+// Verification deliberately keeps scanning so users get a complete failure list.
+func runFileWorkers(ctx context.Context, files []Entry, workers int, stopOnError bool, process func(context.Context, Entry) error) fileWorkerStats {
+	var stats fileWorkerStats
+	if workers < 1 {
+		stats.First = errors.New("workers must be at least 1")
+		return stats
+	}
+	workCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	jobs := make(chan Entry)
+	var wg sync.WaitGroup
+	var completed, failed, cancelled atomic.Int64
+	var first error
+	var firstMu sync.Mutex
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for entry := range jobs {
+				if workCtx.Err() != nil {
+					cancelled.Add(1)
+					continue
+				}
+				err := process(workCtx, entry)
+				if err == nil {
+					completed.Add(1)
+					continue
+				}
+				if workCtx.Err() != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+					cancelled.Add(1)
+					continue
+				}
+				failed.Add(1)
+				firstMu.Lock()
+				if first == nil {
+					first = err
+					if stopOnError {
+						cancel()
+					}
+				}
+				firstMu.Unlock()
+			}
+		}()
+	}
+
+send:
+	for _, entry := range files {
+		select {
+		case <-workCtx.Done():
+			break send
+		case jobs <- entry:
+		}
+	}
+	close(jobs)
+	wg.Wait()
+
+	stats.Completed = completed.Load()
+	stats.Failed = failed.Load()
+	stats.Cancelled = cancelled.Load()
+	stats.First = first
+	if stats.First == nil && ctx.Err() != nil {
+		stats.First = ctx.Err()
+	}
+	return stats
+}
+
+func runFiles(ctx context.Context, root string, m Manifest, workers int, onlyVerify bool) error {
+	var network, done, verified atomic.Int64
+	var total int64
+	for _, entry := range m.Files {
+		if entry.Size < 0 || entry.Size > maxInt64-total {
+			return fmt.Errorf("invalid or overflowing manifest size at %s", entry.Name)
+		}
+		total += entry.Size
+	}
+
+	valid := map[string]bool(nil)
+	if !onlyVerify {
+		var required int64
+		var err error
+		valid, required, err = preflightFiles(root, m.Files)
+		if err != nil {
+			return err
+		}
+		logf("SPACE preflight: %s additional space required for downloads", formatBytes(uint64(required)))
+	}
+
+	stop := make(chan struct{})
+	progressDone := make(chan struct{})
+	go func() {
+		defer close(progressDone)
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		var last int64
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				n := network.Load()
+				logf("PROGRESS %d/%d verified | %.2f/%.2f GiB | %.2f MiB/s",
+					verified.Load(), len(m.Files), float64(done.Load())/(1<<30),
+					float64(total)/(1<<30), float64(n-last)/(1<<20))
+				last = n
+			}
+		}
+	}()
+
+	process := func(workCtx context.Context, entry Entry) error {
+		p, err := safe(root, entry.Name)
+		if err != nil {
+			return err
+		}
+		if onlyVerify {
+			if !verify(p, entry) {
+				return errors.New("missing or invalid")
+			}
+		} else if !valid[entry.Name] {
+			logf("FILE %s (%d bytes)", entry.Name, entry.Size)
+			if err = downloadAfterPreflight(workCtx, root, entry, m.CDN, &network); err != nil {
+				return err
+			}
+		}
+		done.Add(entry.Size)
+		verified.Add(1)
+		return nil
+	}
+
+	stats := runFileWorkers(ctx, m.Files, workers, !onlyVerify, process)
+	close(stop)
+	<-progressDone
+	logf("RESULT %d/%d verified, %d failed, %d cancelled; %d bytes transferred",
+		stats.Completed, len(m.Files), stats.Failed, stats.Cancelled, network.Load())
+	if stats.First != nil {
+		return stats.First
+	}
+	return nil
+}
+
 func writeJSON(path string,v any)error{b,e:=json.MarshalIndent(v,"","  ");if e!=nil{return e};if e=os.MkdirAll(filepath.Dir(path),0755);e!=nil{return e};return os.WriteFile(path,b,0644)}
-func merge(root string,m Manifest,out string)error{
- if verify(out,*m.Archive){return nil}
- if e:=os.MkdirAll(filepath.Dir(out),0755);e!=nil{return e}
- f,e:=os.Create(out+".part");if e!=nil{return e}
- for _,v:=range m.Files{p,e:=safe(root,v.Name);if e!=nil{f.Close();return e};r,e:=os.Open(p);if e!=nil{f.Close();return e};_,e=io.Copy(f,r);r.Close();if e!=nil{f.Close();return e}}
- if e=f.Close();e!=nil{return e};if !verify(out+".part",*m.Archive){return errors.New("merged ZIP checksum mismatch")};return os.Rename(out+".part",out)
+func merge(root string, m Manifest, out string) error {
+	if m.Archive == nil {
+		return errors.New("missing ZIP archive metadata")
+	}
+	if verify(out, *m.Archive) {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(out), 0755); err != nil {
+		return err
+	}
+	if err := requireFreeSpace(filepath.Dir(out), m.Archive.Size, "merge slice archive"); err != nil {
+		return err
+	}
+	f, err := os.Create(out + ".part")
+	if err != nil {
+		return err
+	}
+	ok := false
+	defer func() {
+		f.Close()
+		if !ok {
+			os.Remove(out + ".part")
+		}
+	}()
+	for _, entry := range m.Files {
+		p, err := safe(root, entry.Name)
+		if err != nil {
+			return err
+		}
+		r, err := os.Open(p)
+		if err != nil {
+			return err
+		}
+		_, copyErr := io.Copy(f, r)
+		closeErr := r.Close()
+		if copyErr != nil || closeErr != nil {
+			return errors.Join(copyErr, closeErr)
+		}
+	}
+	if err = f.Sync(); err != nil {
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	if !verify(out+".part", *m.Archive) {
+		return errors.New("merged ZIP checksum mismatch")
+	}
+	if err = os.Rename(out+".part", out); err != nil {
+		return err
+	}
+	ok = true
+	return nil
 }
-func extractZIP(path,root string)error{
- z,e:=zip.OpenReader(path);if e!=nil{return e};defer z.Close()
- for _,f:=range z.File{
-  name:=strings.TrimSuffix(strings.ReplaceAll(f.Name,"\\","/"),"/")
-  if reservedGamePath(name)||f.Mode()&os.ModeSymlink!=0{return fmt.Errorf("unsafe ZIP entry %s",name)}
-  p,e:=safe(root,name);if e!=nil{return e}
-  if f.FileInfo().IsDir(){if e=os.MkdirAll(p,0755);e!=nil{return e};continue}
-  if e=os.MkdirAll(filepath.Dir(p),0755);e!=nil{return e}
-  r,e:=f.Open();if e!=nil{return e};tmp,e:=os.CreateTemp(filepath.Dir(p),".ap-extract-");if e!=nil{r.Close();return e}
-  _,ce:=io.Copy(tmp,r);r.Close();se:=tmp.Close();if ce!=nil||se!=nil{os.Remove(tmp.Name());return errors.Join(ce,se)}
-  if e=os.Rename(tmp.Name(),p);e!=nil{os.Remove(tmp.Name());return e}
- };return nil
+
+func extractZIP(path, root string) error {
+	entries, err := zipExtractedEntries(path)
+	if err != nil {
+		return err
+	}
+	if st, statErr := os.Lstat(root); statErr == nil && st.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("symlink refused for extraction root: %s", root)
+	}
+	if err = os.MkdirAll(root, 0755); err != nil {
+		return err
+	}
+	required, err := requiredExtractionBytes(root, entries)
+	if err != nil {
+		return err
+	}
+	if err = requireFreeSpace(root, required, "ZIP extraction"); err != nil {
+		return err
+	}
+	logf("SPACE preflight: %s additional space required for ZIP extraction", formatBytes(uint64(required)))
+
+	z, err := zip.OpenReader(path)
+	if err != nil {
+		return err
+	}
+	defer z.Close()
+	for _, f := range z.File {
+		name := strings.TrimSuffix(strings.ReplaceAll(f.Name, "\\", "/"), "/")
+		p, err := safe(root, name)
+		if err != nil {
+			return err
+		}
+		if f.FileInfo().IsDir() {
+			if err = os.MkdirAll(p, f.Mode().Perm()); err != nil {
+				return err
+			}
+			continue
+		}
+		entry := ExtractedEntry{Name: name, Size: int64(f.UncompressedSize64), CRC32: f.CRC32}
+		if extractedEntryValid(root, entry) {
+			continue
+		}
+		if err = os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+			return err
+		}
+		r, err := f.Open()
+		if err != nil {
+			return err
+		}
+		tmp, err := os.CreateTemp(filepath.Dir(p), ".ap-extract-*")
+		if err != nil {
+			r.Close()
+			return err
+		}
+		tmpName := tmp.Name()
+		mode := f.Mode().Perm()
+		if mode == 0 {
+			mode = 0644
+		}
+		copyErr := tmp.Chmod(mode)
+		var copied int64
+		if copyErr == nil {
+			copied, copyErr = io.Copy(tmp, io.LimitReader(r, entry.Size+1))
+		}
+		readCloseErr := r.Close()
+		if copyErr == nil && copied != entry.Size {
+			copyErr = fmt.Errorf("ZIP entry size mismatch for %s: got %d, want %d", name, copied, entry.Size)
+		}
+		if copyErr == nil && readCloseErr != nil {
+			copyErr = readCloseErr
+		}
+		if copyErr == nil {
+			copyErr = tmp.Sync()
+		}
+		closeErr := tmp.Close()
+		if copyErr != nil || closeErr != nil {
+			_ = os.Remove(tmpName)
+			return errors.Join(copyErr, closeErr)
+		}
+		if err = os.Rename(tmpName, p); err != nil {
+			_ = os.Remove(tmpName)
+			return err
+		}
+	}
+	return nil
 }
-func verifyExtracted(archive,root string)error{
- z,e:=zip.OpenReader(archive);if e!=nil{return e};defer z.Close()
- var failed int
- for _,v:=range z.File{
-  if v.FileInfo().IsDir(){continue}
-  p,e:=safe(root,strings.ReplaceAll(v.Name,"\\","/"));if e!=nil{return e}
-  f,e:=os.Open(p);if e!=nil{failed++;logf("FAIL extracted %s: %v",v.Name,e);continue}
-  h:=crc32.NewIEEE();n,er:=io.Copy(h,f);f.Close()
-  if er!=nil||uint64(n)!=v.UncompressedSize64||h.Sum32()!=v.CRC32{failed++;logf("FAIL extracted %s",v.Name)}
- }
- if failed>0{return fmt.Errorf("%d extracted files invalid or missing",failed)};logf("Extracted ZIP files verified");return nil
+
+func verifyExtracted(archive, root string) error {
+	entries, err := zipExtractedEntries(archive)
+	if err != nil {
+		return err
+	}
+	return verifyExtractedEntries(root, entries)
 }
+
 func main(){if err:=run();err!=nil{logf("ERROR: %v",err);os.Exit(1)}}
 func run()error{
  if len(os.Args)<2{return errors.New("usage: azurpromilia download|verify --help")}
