@@ -139,7 +139,8 @@
 GitHub Actions 验证记录：
 
 - 原完整工作流 Run #50（`45559651106`）通过 `go test -race ./...`、`go vet ./...`、Python/Node 检查、Linux amd64/arm64 构建及 Artifact 上传。
-- 第一阶段可靠性改动 Run #111（`45619034089`，head `272ef2f`）再次通过上述全部检查；新增的 fail-fast worker、永久 4xx CDN 回退、磁盘预检查、已验证 `.part` 复用、ZIP 路径/解压保护测试均包含在该次 `go test -race ./...` 中。
+- 第一阶段可靠性改动 Run #111（`45619034089`，head `272ef2f`）通过上述全部检查。
+- 随后加入分片总大小一致性、解压目标类型保护和更完整的空间/进度信息后，Run #139（`45620110972`，head `16019db`）再次通过 `go test -race ./...`、`go vet ./...`、Python/Node 检查、Linux amd64/arm64 构建及 Artifact 上传。
 
 ## 5. 验收标准
 
