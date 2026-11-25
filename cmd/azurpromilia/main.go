@@ -310,7 +310,7 @@ func runFiles(ctx context.Context, root string, m Manifest, workers int, onlyVer
 	if workers < 1 || workers > 32 {
 		return errors.New("workers must be 1..32")
 	}
-	var network, done, verified atomic.Int64
+	var network, done, started, verified, failedProgress atomic.Int64
 	var total int64
 	for _, entry := range m.Files {
 		if entry.Size < 0 || entry.Size >= maxInt64 || entry.Size > maxInt64-total {
@@ -327,7 +327,6 @@ func runFiles(ctx context.Context, root string, m Manifest, workers int, onlyVer
 		if err != nil {
 			return err
 		}
-		logf("SPACE preflight: %s additional space required for downloads", formatBytes(uint64(required)))
 	}
 
 	stop := make(chan struct{})
@@ -343,15 +342,21 @@ func runFiles(ctx context.Context, root string, m Manifest, workers int, onlyVer
 				return
 			case <-ticker.C:
 				n := network.Load()
-				logf("PROGRESS %d/%d verified | %.2f/%.2f GiB | %.2f MiB/s",
-					verified.Load(), len(m.Files), float64(done.Load())/(1<<30),
-					float64(total)/(1<<30), float64(n-last)/(1<<20))
+				logf("PROGRESS %d started, %d verified, %d failed / %d total | %.2f/%.2f GiB | %.2f MiB/s",
+					started.Load(), verified.Load(), failedProgress.Load(), len(m.Files),
+					float64(done.Load())/(1<<30), float64(total)/(1<<30), float64(n-last)/(1<<20))
 				last = n
 			}
 		}
 	}()
 
-	process := func(workCtx context.Context, entry Entry) error {
+	process := func(workCtx context.Context, entry Entry) (processErr error) {
+		started.Add(1)
+		defer func() {
+			if processErr != nil && workCtx.Err() == nil {
+				failedProgress.Add(1)
+			}
+		}()
 		p, err := safe(root, entry.Name)
 		if err != nil {
 			return err
@@ -482,7 +487,6 @@ func extractZIP(path, root string) error {
 	if err = requireFreeSpace(root, required, "ZIP extraction"); err != nil {
 		return err
 	}
-	logf("SPACE preflight: %s additional space required for ZIP extraction", formatBytes(uint64(required)))
 
 	z, err := zip.OpenReader(path)
 	if err != nil {
