@@ -83,6 +83,7 @@ var output sync.Mutex
 func logf(f string,a ...any){output.Lock();defer output.Unlock();fmt.Fprintf(os.Stderr,f+"\n",a...)}
 func validMD5(s string)bool{b,e:=hex.DecodeString(s);return e==nil&&len(b)==16}
 func safe(root,name string)(string,error){
+ if st,e:=os.Lstat(root);e==nil&&st.Mode()&os.ModeSymlink!=0{return "",fmt.Errorf("symlink refused for root: %s",root)}
  name=strings.ReplaceAll(name,"\\","/")
  if name==""||strings.HasPrefix(name,"/")||strings.Contains(name,":") {return "",fmt.Errorf("unsafe path %q",name)}
  for _,p:=range strings.Split(name,"/"){if p==".."||p=="."||p==""{return "",fmt.Errorf("unsafe path %q",name)}}
