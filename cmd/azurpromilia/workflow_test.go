@@ -304,3 +304,29 @@ func TestMergeRejectsSliceTotalMismatchBeforeWriting(t *testing.T) {
 		t.Fatalf("merge created a partial archive before rejecting size mismatch: %v", err)
 	}
 }
+
+
+func TestMergeWritesAndVerifiesDeclaredArchive(t *testing.T) {
+	root := t.TempDir()
+	parts := [][]byte{[]byte("abc"), []byte("def")}
+	files := make([]Entry, 0, len(parts))
+	for i, data := range parts {
+		name := fmt.Sprintf("slice-%d", i+1)
+		if err := os.WriteFile(filepath.Join(root, name), data, 0644); err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, Entry{Name: name, Size: int64(len(data)), MD5: md5Of(data)})
+	}
+	archiveData := []byte("abcdef")
+	manifest := Manifest{
+		Files: files,
+		Archive: &Entry{Name: "game.zip", Size: int64(len(archiveData)), MD5: md5Of(archiveData)},
+	}
+	out := filepath.Join(root, "archive", "game.zip")
+	if err := merge(root, manifest, out); err != nil {
+		t.Fatal(err)
+	}
+	if !verify(out, *manifest.Archive) {
+		t.Fatal("merged archive did not match declared size and MD5")
+	}
+}
