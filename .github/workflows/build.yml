@@ -70,9 +70,51 @@ jobs:
           Get-ChildItem yostar-extracted -Force | Select-Object Name,Length,Mode | Format-Table -AutoSize | Out-String -Width 300 | Add-Content yostar-report.txt
           "`n== INTERESTING EXTRACTED FILES ==" | Add-Content yostar-report.txt
           Get-ChildItem yostar-extracted -Recurse -Force -File |
-            Where-Object { $_.Name -match '(?i)(asar|json|config|launcher|electron|dll|exe|pak|dat|7z|zip)$' -or $_.FullName -match '(?i)(resources|app\.asar|node_modules|launcher)' } |
+            Where-Object { $_.Name -match '(?i)(asar|json|config|launcher|electron|dll|exe|pak|dat|7z|zip)
+        with:
+          name: yostar-installer-static-report
+          path: yostar-report.txt
+          retention-days: 7
+ -or $_.FullName -match '(?i)(resources|app\.asar|node_modules|launcher)' } |
             Select-Object -First 300 FullName,Length |
             Format-Table -AutoSize | Out-String -Width 300 | Add-Content yostar-report.txt
+          $plugin = Join-Path 'yostar-extracted' '$PLUGINSDIR'
+          $asar = Join-Path $plugin 'resources\app.asar'
+          if (Test-Path $asar) {
+            "`n== OUTER APP.ASAR STATIC MARKERS ==" | Add-Content yostar-report.txt
+            python tools/yostar_static_probe.py $asar --out yostar-app-asar.txt
+            Get-Content yostar-app-asar.txt | Add-Content yostar-report.txt
+          }
+          $nestedInstaller = Join-Path $plugin 'launcher-installer.exe'
+          if (Test-Path $nestedInstaller) {
+            "`n== NESTED LAUNCHER-INSTALLER.EXE ==" | Add-Content yostar-report.txt
+            python tools/yostar_static_probe.py $nestedInstaller --out yostar-launcher-installer.txt
+            Get-Content yostar-launcher-installer.txt | Add-Content yostar-report.txt
+            7z l $nestedInstaller | Out-File -Append -Encoding utf8 yostar-report.txt
+          }
+          $app32 = Join-Path $plugin 'app-32.7z'
+          if (Test-Path $app32) {
+            "`n== APP-32.7Z LISTING ==" | Add-Content yostar-report.txt
+            7z l $app32 | Out-File -Append -Encoding utf8 yostar-report.txt
+            New-Item -ItemType Directory -Force yostar-app32 | Out-Null
+            7z x -y -oyostar-app32 $app32 | Out-File -Append -Encoding utf8 yostar-report.txt
+            "`n== APP-32 INTERESTING FILES ==" | Add-Content yostar-report.txt
+            Get-ChildItem yostar-app32 -Recurse -Force -File |
+              Where-Object { $_.Name -match '(?i)(asar|json|config|launcher|electron|dll|exe|pak|dat)
+        with:
+          name: yostar-installer-static-report
+          path: yostar-report.txt
+          retention-days: 7
+ -or $_.FullName -match '(?i)(resources|app\.asar|node_modules|launcher)' } |
+              Select-Object -First 400 FullName,Length |
+              Format-Table -AutoSize | Out-String -Width 300 | Add-Content yostar-report.txt
+            $innerAsar = Get-ChildItem yostar-app32 -Recurse -Force -File -Filter app.asar | Select-Object -First 1
+            if ($innerAsar) {
+              "`n== APP-32 APP.ASAR STATIC MARKERS ==" | Add-Content yostar-report.txt
+              python tools/yostar_static_probe.py $innerAsar.FullName --out yostar-app32-asar.txt
+              Get-Content yostar-app32-asar.txt | Add-Content yostar-report.txt
+            }
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: yostar-installer-static-report
