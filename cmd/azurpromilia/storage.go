@@ -1,0 +1,105 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"syscall"
+)
+
+const maxInt64 = int64(^uint64(0) >> 1)
+
+func availableBytes(path string) (uint64, error) {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(path, &stat); err != nil {
+		return 0, fmt.Errorf("inspect free disk space at %s: %w", path, err)
+	}
+	if stat.Bsize <= 0 {
+		return 0, fmt.Errorf("filesystem returned invalid block size %d", stat.Bsize)
+	}
+	blockSize := uint64(stat.Bsize)
+	if stat.Bavail > ^uint64(0)/blockSize {
+		return ^uint64(0), nil
+	}
+	return stat.Bavail * blockSize, nil
+}
+
+func formatBytes(n uint64) string {
+	const (
+		KiB = uint64(1 << 10)
+		MiB = uint64(1 << 20)
+		GiB = uint64(1 << 30)
+	)
+	switch {
+	case n >= GiB:
+		return fmt.Sprintf("%.2f GiB", float64(n)/float64(GiB))
+	case n >= MiB:
+		return fmt.Sprintf("%.2f MiB", float64(n)/float64(MiB))
+	case n >= KiB:
+		return fmt.Sprintf("%.2f KiB", float64(n)/float64(KiB))
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
+}
+
+func checkAvailableSpace(required, available uint64, operation string) error {
+	if required > available {
+		return fmt.Errorf("insufficient free disk space for %s: need %s, available %s",
+			operation, formatBytes(required), formatBytes(available))
+	}
+	return nil
+}
+
+func requireFreeSpace(path string, required int64, operation string) error {
+	if required < 0 {
+		return fmt.Errorf("invalid negative space requirement for %s: %d", operation, required)
+	}
+	if required == 0 {
+		return nil
+	}
+	available, err := availableBytes(path)
+	if err != nil {
+		return err
+	}
+	return checkAvailableSpace(uint64(required), available, operation)
+}
+
+// preflightFiles hashes existing files once, then estimates the additional bytes
+// needed for every missing or invalid resource. The returned map lets workers
+// skip a second hash of files already proven valid.
+func preflightFiles(root string, files []Entry) (map[string]bool, int64, error) {
+	if st, err := os.Lstat(root); err == nil && st.Mode()&os.ModeSymlink != 0 {
+		return nil, 0, fmt.Errorf("symlink refused for download root: %s", root)
+	}
+	if err := os.MkdirAll(root, 0755); err != nil {
+		return nil, 0, err
+	}
+
+	valid := make(map[string]bool, len(files))
+	var required int64
+	for _, entry := range files {
+		if entry.Size < 0 || !validMD5(entry.MD5) {
+			return nil, 0, fmt.Errorf("invalid size or MD5 in download manifest: %s", entry.Name)
+		}
+		p, err := safe(root, entry.Name)
+		if err != nil {
+			return nil, 0, err
+		}
+		if st, statErr := os.Lstat(p); statErr == nil && !st.Mode().IsRegular() {
+			return nil, 0, fmt.Errorf("download destination exists but is not a regular file: %s", entry.Name)
+		} else if statErr != nil && !os.IsNotExist(statErr) {
+			return nil, 0, fmt.Errorf("inspect download destination %s: %w", entry.Name, statErr)
+		}
+		if verify(p, entry) {
+			valid[entry.Name] = true
+			continue
+		}
+		if entry.Size > maxInt64-required {
+			return nil, 0, fmt.Errorf("download size estimate overflows for %s", entry.Name)
+		}
+		required += entry.Size
+	}
+	if err := requireFreeSpace(root, required, "download"); err != nil {
+		return nil, 0, err
+	}
+	return valid, required, nil
+}
