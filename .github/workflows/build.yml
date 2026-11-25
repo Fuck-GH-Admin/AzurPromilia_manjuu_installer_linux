@@ -22,6 +22,9 @@ jobs:
           mkdir -p dist
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o dist/azurpromilia-linux-amd64 ./cmd/azurpromilia
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o dist/azurpromilia-linux-arm64 ./cmd/azurpromilia
+          cp -r tools dist/tools
+          cp -r docs dist/docs
+          cp README.md dist/README.md
           ./dist/azurpromilia-linux-amd64 help
           cd dist && sha256sum azurpromilia-linux-* > SHA256SUMS
       - uses: actions/upload-artifact@v4
