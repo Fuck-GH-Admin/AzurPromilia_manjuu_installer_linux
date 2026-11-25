@@ -146,6 +146,7 @@ func downloadFile(ctx context.Context,root string,e Entry,cdn []string,network *
     if ce!=nil{er=ce}else if se!=nil{er=se}else if n!=e.Size-off{er=fmt.Errorf("incomplete response: %d/%d bytes",n,e.Size-off)}
    };res.Body.Close()
   }
+  if ctx.Err() != nil { return ctx.Err() }
   if er==nil&&verify(part,e){return os.Rename(part,p)}
   if er==nil{er=errors.New("MD5 mismatch");_ = os.Remove(part)}
   last=er;logf("RETRY %s (%d): %v",e.Name,attempt+1,last)
@@ -373,6 +374,13 @@ func writeJSON(path string,v any)error{b,e:=json.MarshalIndent(v,"","  ");if e!=
 func merge(root string, m Manifest, out string) error {
 	if m.Archive == nil {
 		return errors.New("missing ZIP archive metadata")
+	}
+	for _, candidate := range []string{out, out + ".part"} {
+		if st, statErr := os.Lstat(candidate); statErr == nil && !st.Mode().IsRegular() {
+			return fmt.Errorf("merge target is not a regular file: %s", candidate)
+		} else if statErr != nil && !os.IsNotExist(statErr) {
+			return statErr
+		}
 	}
 	if verify(out, *m.Archive) {
 		return nil
