@@ -484,6 +484,10 @@ func zipExtractedEntries(path string) ([]ExtractedEntry, error) {
 	}
 	defer z.Close()
 	out := make([]ExtractedEntry, 0, len(z.File))
+	seen := make(map[string]bool, len(z.File))
+	if len(z.File) > 100000 {
+		return nil, fmt.Errorf("ZIP has too many entries: %d", len(z.File))
+	}
 	for _, f := range z.File {
 		if f.FileInfo().IsDir() {
 			continue
@@ -492,6 +496,14 @@ func zipExtractedEntries(path string) ([]ExtractedEntry, error) {
 			return nil, fmt.Errorf("ZIP symlink refused: %s", f.Name)
 		}
 		name := strings.ReplaceAll(f.Name, "\\", "/")
+		key := strings.ToLower(strings.Trim(name, "/"))
+		if key == "" || strings.HasPrefix(key, ".azurpromilia/") || key == "_index" || strings.HasPrefix(key, "_index/") || key == "_pre_download" || strings.HasPrefix(key, "_pre_download/") {
+			return nil, fmt.Errorf("ZIP uses reserved or empty path: %s", f.Name)
+		}
+		if seen[key] {
+			return nil, fmt.Errorf("ZIP contains duplicate path: %s", f.Name)
+		}
+		seen[key] = true
 		if _, err := safe(os.TempDir(), name); err != nil {
 			return nil, err
 		}
