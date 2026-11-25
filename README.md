@@ -5,6 +5,7 @@
 ## 当前状态与本地测试
 
 - [原版启动器安装、更新与预下载流程逆向记录](docs/ORIGINAL_LAUNCHER_FLOW.md)
+- [下一阶段实施计划：完整安装链路实服验收](docs/NEXT_IMPLEMENTATION_PLAN.md)
 - [实现状态、已知缺口与验收标准](docs/IMPLEMENTATION_STATUS.md)
 - [本地测试步骤与问题反馈清单](docs/LOCAL_TESTING.md)
 
