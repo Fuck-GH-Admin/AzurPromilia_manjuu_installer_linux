@@ -65,3 +65,33 @@ func TestPreflightFilesRejectsSizeOverflow(t *testing.T) {
 		t.Fatal("overflowing download size estimate was accepted")
 	}
 }
+
+
+func TestPreflightFilesReusesCompleteVerifiedPart(t *testing.T) {
+	root := t.TempDir()
+	data := []byte("already downloaded")
+	entry := Entry{Name: "asset.bin", Size: int64(len(data)), MD5: md5Of(data)}
+	if err := os.WriteFile(filepath.Join(root, "asset.bin.part"), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	valid, required, err := preflightFiles(root, []Entry{entry})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if valid[entry.Name] {
+		t.Fatal("partial file was incorrectly marked as installed")
+	}
+	if required != 0 {
+		t.Fatalf("required bytes = %d, want 0 for a complete verified partial", required)
+	}
+	var transferred atomic.Int64
+	if err := downloadAfterPreflight(context.Background(), root, entry, []string{"https://cdn.invalid"}, &transferred); err != nil {
+		t.Fatal(err)
+	}
+	if !verify(filepath.Join(root, entry.Name), entry) {
+		t.Fatal("verified partial was not promoted to the destination")
+	}
+	if transferred.Load() != 0 {
+		t.Fatalf("transferred %d bytes despite a complete verified partial", transferred.Load())
+	}
+}
