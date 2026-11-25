@@ -2,10 +2,14 @@ package main
 
 import (
 	"archive/zip"
+	"context"
 	"crypto/md5"
+	"errors"
 	"fmt"
+	"hash/crc32"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
