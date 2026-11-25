@@ -1,13 +1,14 @@
 # AzurPromilia Manjuu Installer Linux
 
-非官方 Linux 原生 CLI。本机已通过官方包清单获取、两种包类型的 CDN 小文件探测和切片续传测试。当前为开发版，全量安装和游戏启动仍待验证。
+非官方 Linux 原生 CLI。本机已通过官方包清单获取、两种包类型的 CDN 小文件探测和切片续传测试。当前为开发版；自动安装、预下载、升级和修复代码已加入，全量安装和更新仍待本地实服验收。
 
 ## 当前状态与本地测试
 
+- [原版启动器安装、更新与预下载流程逆向记录](docs/ORIGINAL_LAUNCHER_FLOW.md)
 - [实现状态、已知缺口与验收标准](docs/IMPLEMENTATION_STATUS.md)
 - [本地测试步骤与问题反馈清单](docs/LOCAL_TESTING.md)
 
-请先阅读这两份文档，再开始真实下载。当前 API bootstrap 仅为实验性匿名请求；预下载补丁、升级/修复、自动下载模式选择均未完成。
+请先阅读实现状态、原版流程和本地测试文档。核心工作流已经实现，但尚未完成整包下载、升级与游戏启动的实服验收。
 
 实测记录包含 HTTP 400 的对照结果、官方索引数据及 Range 续传的响应。[本机实测记录与直连命令](docs/LOCAL_TESTING.md)
 
@@ -20,7 +21,7 @@ go build -trimpath -o azurpromilia ./cmd/azurpromilia
 
 GitHub Actions 在每次 push 时运行 Go 测试、vet 和 Linux amd64/arm64 构建，并上传二进制与 SHA256SUMS。
 
-## 获取真实包清单（实验性一次性引导）
+## 手动获取真实包清单
 
 使用自己的原始安装器，在 Windows 或 Linux Wine 环境执行：
 
@@ -28,18 +29,41 @@ GitHub Actions 在每次 push 时运行 Go 测试、vet 和 Linux amd64/arm64 �
 python3 tools/bootstrap.py --installer /path/to/original.exe --out packageconfig.json
 ```
 
-引导器调用原版 Electron/N-API 组件生成匿名包清单请求，已在 Wine 10.0 和 `SC000` 样本上通过。若官方接口拒绝匿名请求，请停止并记录错误。下载器本身是 Linux 原生程序，也可直接导入自己取得的官方包清单。请将 `packageconfig.json` 保留在本机，其中可能有临时 CDN URL。
+引导器调用原版 Electron/N-API 组件生成匿名包清单请求，已在 Wine 10.0 和 `SC000` 样本上通过。它也会尝试获取游戏基础信息和 `/pre/check` 启动元数据；后两项若匿名接口不可用会作为可选信息跳过。下载器本身是 Linux 原生程序，也可直接导入自己取得的官方包清单。请将 `packageconfig.json` 保留在本机，其中可能有临时 CDN URL。
 
-## 下载
+## 完整工作流（开发中）
 
-将你正常使用的官方启动器获得的 packageconfig JSON 响应保存为本地 packageconfig.json。不要上传包含账号、令牌或签名的请求信息。Go 下载器本身尚未实现纯 Go 官方 API 签名；一次性 bootstrap 借用原版 Windows 原生模块进行实验性匿名签名请求，不支持账号登录或 token。
+编译：
 
 ```sh
-./azurpromilia download --installer /path/to/original.exe --packageconfig packageconfig.json --root "$HOME/Games/AzurPromilia" --workers 4
+go build -trimpath -o azurpromilia ./cmd/azurpromilia
+```
+
+如果不传 `--packageconfig`，新工作流会调用 `tools/bootstrap.py` 获取最新匿名官方元数据。Linux 需要 Wine；Windows 可直接运行 Python 引导。元数据默认缓存在游戏目录的 `.azurpromilia/packageconfig.json`，每次工作流默认刷新；显式传入 `--packageconfig` 时使用指定文件。
+
+```sh
+# 查看服务端版本、下载模式、包类型和可用启动元数据
+./azurpromilia info --installer /path/to/original.exe
+
+# 首次安装：按服务端 downloadMode 自动选择 SLICE 或 REALITY
+./azurpromilia install --installer /path/to/original.exe --root "$HOME/Games/AzurPromilia" --workers 4
+
+# 预下载：对比 released/preload 索引，只下载变化文件
+./azurpromilia preload --installer /path/to/original.exe --root "$HOME/Games/AzurPromilia" --workers 4
+
+# 升级：复用通过 MD5 验证的预下载文件，再补齐、校验并清理旧版本文件
+./azurpromilia update --installer /path/to/original.exe --root "$HOME/Games/AzurPromilia" --workers 4
+
+# 修复：重新校验当前版本所有文件，只重下缺失或损坏资源
+./azurpromilia repair --installer /path/to/original.exe --root "$HOME/Games/AzurPromilia" --workers 4
+
+# 独立完整性校验
 ./azurpromilia verify --root "$HOME/Games/AzurPromilia"
 ```
 
-默认选择 released 的 packageType=2 逐文件包，--slice 选择 type=1 切片 ZIP 包；--target preload 选择预下载完整资源索引（独立目录，不自动应用）；--no-extract 仅合并切片并校验 ZIP。原始安装器用于本地读取索引解码参数，不提交原始二进制或参数。每个文件校验后才重命名，失败退出非零；重复运行会跳过已通过验证的文件。切片模式 verify 验证切片和合并 ZIP，并按已验证 ZIP 中的 CRC32 与大小检查解压文件；仅下载 ZIP 时使用 verify --no-extract。预下载校验使用 verify --target preload --version VERSION_CODE。
+可用 `--mode slice` 或 `--mode reality` 覆盖首次安装模式；默认 `auto` 使用原版枚举：`downloadMode=1` 为分片 ZIP，`downloadMode=2` 为逐文件。新工作流目前不启动游戏，不修改 Proton；`info` 会显示服务器可提供的 launch metadata，供手动配置使用。
+
+旧的 `download` 命令仍保留，适合指定 packageconfig 的底层下载/探测。
 
 ## 实服探测
 
@@ -47,7 +71,7 @@ Linux 本机实测通过。Actions 中的 Official CDN live probe 是独立的�
 
 ## 证据与限制
 
-样本 SHA-256 为 `cf4b1f6233af2f2cb2d1c0de12f54d07606c3c84c829390b6caccfb2d0d1f04b`。内部 ZIP 位于偏移 12453620，包含 `resources/app.asar`、`res/app_config.dat` 和 Windows `cutils.node`。逐文件索引包含三列计数头、四列目录记录和五列文件记录。切片索引使用三列 ZIP 记录及五列切片记录。索引为 Base64 编码的 AES-CBC，先按 API 返回的大小和 MD5 验证密文。包清单签名由原版 Windows 原生模块处理。自动版本发现、预下载差异比较与合并、旧文件清理仍待实现。
+样本 SHA-256 为 `cf4b1f6233af2f2cb2d1c0de12f54d07606c3c84c829390b6caccfb2d0d1f04b`。内部 ZIP 位于偏移 12453620，包含 `resources/app.asar`、`res/app_config.dat` 和 Windows `cutils.node`。逐文件索引包含三列计数头、四列目录记录和五列文件记录。切片索引使用三列 ZIP 记录及五列切片记录。索引为 Base64 编码的 AES-CBC，先按 API 返回的大小和 MD5 验证密文。包清单签名由原版 Windows 原生模块处理。自动下载模式选择、预下载差异下载、版本索引保存、升级文件补齐与旧 manifest 文件清理已经写入代码；这些流程仍需全量真实版本测试。账号登录、token 刷新、全局升级事务回滚、游戏启动和 Proton 配置均未实现。
 
 ## Proton
 

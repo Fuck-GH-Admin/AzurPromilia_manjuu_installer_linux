@@ -5,3 +5,8 @@ packageconfig.json
 /azurpromilia
 /dist/
 /.config-extract/
+
+# Local game metadata, indexes and preload cache
+.azurpromilia/
+_index/
+_pre_download/

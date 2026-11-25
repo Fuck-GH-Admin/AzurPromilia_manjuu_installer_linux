@@ -203,3 +203,86 @@ API 主站为 `api-grp.manjuu.com`，备用站为 `api-grp-l2.manjuu.com`。引�
 用已验证分片的前 42,991,616 字节创建 `.part` 后，下载器发送 `Range: bytes=42991616-`，主 CDN 返回 `206` 和 `Content-Range: bytes 42991616-45275760/45275761`，续传后的文件通过校验。
 
 全量下载、切片合并和解压、预下载、游戏启动仍待实服验证。
+
+
+## 11. 新增的完整工作流命令（待实服验收）
+
+本节对应 `install`、`info`、`preload`、`update`、`repair`。这些命令已经有代码实现，但**还没有完整游戏全量下载、真实版本升级的端到端验收记录**。第一次测试仍建议使用独立目录。
+
+### 自动获取当前官方元数据
+
+不传 `--packageconfig` 时，程序会自动调用 `tools/bootstrap.py`，把 packageconfig 缓存到游戏目录的 `.azurpromilia/packageconfig.json`。默认每次刷新，避免拿旧版本清单执行 update。
+
+```bash
+./azurpromilia info \\
+  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe"
+```
+
+Linux 需要 Python 3 和可运行原版 N-API 模块的 Wine。若二进制放在 GitHub Actions 的 `dist/` 目录中，需保留同目录下的 `tools/` 文件夹。若要离线重用已有 JSON，可显式传入 `--packageconfig ./packageconfig.json`。
+
+### 首次安装：自动选择服务器模式
+
+```bash
+./azurpromilia install \\
+  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \\
+  --root "$HOME/Games/AzurPromilia-test" \\
+  --workers 4
+```
+
+默认 `--mode auto`：原版 `downloadMode=1` 选择切片包，`downloadMode=2` 选择逐文件包。可用 `--mode slice` 或 `--mode reality` 手动覆盖。若目录已有 `_index/version`，install 会拒绝覆盖，应该使用 update 或 repair。
+
+### 预下载与更新
+
+先确认本机已安装版本，再运行：
+
+```bash
+./azurpromilia preload \\
+  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \\
+  --root "$HOME/Games/AzurPromilia-test" \\
+  --workers 4
+
+./azurpromilia verify \\
+  --root "$HOME/Games/AzurPromilia-test" \\
+  --target preload \\
+  --version PRELOAD_VERSION_CODE
+```
+
+preload 通过当前 released 与 preload 两份 packageType 2 索引按路径和 MD5 做差异比较，只把新增或变化文件放进 `_pre_download/<version>`。
+
+版本正式切换后：
+
+```bash
+./azurpromilia update \\
+  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \\
+  --root "$HOME/Games/AzurPromilia-test" \\
+  --workers 4
+
+./azurpromilia verify --root "$HOME/Games/AzurPromilia-test"
+```
+
+update 会对预下载缓存重新计算 MD5，复用匹配新版本索引的文件，然后下载其余缺失或不匹配资源。只有全部文件下载和校验成功后才清理旧 manifest 追踪的文件并更新版本标记。
+
+更新采用逐文件原子替换，不是整次更新的全局事务回滚。中途失败时，部分新版本文件可能已落盘，但版本标记尚未前移；修复网络后重新执行 update 会继续检查并收敛。请勿手工删除 `.azurpromilia`、`_index` 或 `_pre_download`。
+
+### 修复
+
+```bash
+./azurpromilia repair \\
+  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \\
+  --root "$HOME/Games/AzurPromilia-test" \\
+  --workers 4
+```
+
+repair 只对当前服务端版本逐文件检查大小和 MD5，不清理旧版本文件。若服务器已发布新版本，应先执行 update。
+
+### 首轮完整测试建议
+
+1. 先运行 `info`，确认 version、downloadMode 和包类型。
+2. 在空目录运行 `install`，确认实际选中的 packageType 与服务器 downloadMode 一致。
+3. 完成后运行 `verify`，检查是否所有 manifest 文件均通过。
+4. 再运行一次 `verify`，确认重复校验稳定。
+5. 若服务器提供 preload，运行 preload 并校验暂存文件；待正式版本切换后再运行 update。
+6. 对一个可丢弃的测试目录运行 repair，确认损坏文件会重新下载。
+7. 全部完成后再考虑正式游戏目录。
+
+目前尚未测试整包下载、磁盘空间预检查、全局回滚、其他渠道、登录态和游戏启动。Proton 仍由用户自行配置；`info` 只显示匿名 API 能提供的 launch metadata。
