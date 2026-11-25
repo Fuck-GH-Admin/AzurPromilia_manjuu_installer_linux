@@ -553,6 +553,20 @@ func printPackageInfo(response Response) error {
 	} else {
 		fmt.Println("Preload: none")
 	}
+	if len(response.Data.GameConfig) > 0 && string(response.Data.GameConfig) != "null" {
+		var value any
+		if json.Unmarshal(response.Data.GameConfig, &value) == nil {
+			b, _ := json.MarshalIndent(value, "", "  ")
+			fmt.Printf("Game config metadata: %s\\n", b)
+		}
+	}
+	if len(response.Data.LaunchInfo) > 0 && string(response.Data.LaunchInfo) != "null" {
+		var value any
+		if json.Unmarshal(response.Data.LaunchInfo, &value) == nil {
+			b, _ := json.MarshalIndent(value, "", "  ")
+			fmt.Printf("Launch metadata (for manual Proton setup): %s\\n", b)
+		}
+	}
 	return nil
 }
 
