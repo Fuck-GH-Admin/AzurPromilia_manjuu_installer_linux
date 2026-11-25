@@ -166,6 +166,8 @@ func installerKeys(path string)(string,string,error){
 func parseIndex(raw []byte,slice bool)(Manifest,error){
  var m Manifest;seen:=map[string]bool{}
  records := 0
+ var expectedTotal, expectedFiles, expectedDirs uint64
+ hasCounts := false
  s:=bufio.NewScanner(bytes.NewReader(raw));s.Buffer(make([]byte,65536),4<<20)
  for s.Scan(){
   line:=strings.TrimSuffix(strings.TrimSpace(s.Text()),",");if line==""{continue}
@@ -173,11 +175,13 @@ func parseIndex(raw []byte,slice bool)(Manifest,error){
   records++
   // A per-file index can start with counts for all records, files, and directories.
   if !slice && records == 1 && len(a) == 3 {
-   for _, field := range a {
-    if _, err := strconv.ParseUint(field, 10, 64); err != nil {
-     return m, errors.New("invalid per-file index counts")
-    }
+   counts := []*uint64{&expectedTotal, &expectedFiles, &expectedDirs}
+   for i, field := range a {
+    n, err := strconv.ParseUint(field, 10, 64)
+    if err != nil { return m, errors.New("invalid per-file index counts") }
+    *counts[i] = n
    }
+   hasCounts = true
    continue
   }
   if slice&&len(a)==3{n,e:=strconv.ParseInt(a[1],10,64);if e!=nil||n<0||!validMD5(a[2])||m.Archive!=nil{return m,errors.New("invalid ZIP record")};m.Archive=&Entry{Name:"game.zip",Size:n,MD5:a[2]};continue}
@@ -191,6 +195,7 @@ func parseIndex(raw []byte,slice bool)(Manifest,error){
   seen[strings.ToLower(name)]=true;m.Files=append(m.Files,Entry{name,a[4],hash,n})
  }
  if err:=s.Err();err!=nil{return m,err}
+ if hasCounts && (uint64(len(m.Files)) != expectedFiles || uint64(len(m.Directories)) != expectedDirs || uint64(len(m.Files)+len(m.Directories)) != expectedTotal) { return m, fmt.Errorf("per-file index count mismatch: header total=%d files=%d dirs=%d, parsed total=%d files=%d dirs=%d", expectedTotal, expectedFiles, expectedDirs, len(m.Files)+len(m.Directories), len(m.Files), len(m.Directories)) }
  if len(m.Files)==0||slice&&m.Archive==nil{return m,errors.New("empty index or missing ZIP record")};return m,nil
 }
 func runFiles(ctx context.Context,root string,m Manifest,workers int,onlyVerify bool)error{
