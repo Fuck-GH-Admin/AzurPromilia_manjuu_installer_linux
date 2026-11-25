@@ -99,6 +99,11 @@ func preflightFiles(root string, files []Entry) (map[string]bool, int64, error) 
 			valid[entry.Name] = true
 			continue
 		}
+		// A complete, checksum-verified .part can be atomically promoted without
+		// downloading another copy or requiring additional free space.
+		if verify(part, entry) {
+			continue
+		}
 		if entry.Size > maxInt64-required {
 			return nil, 0, fmt.Errorf("download size estimate overflows for %s", entry.Name)
 		}
