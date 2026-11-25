@@ -7,6 +7,8 @@
 - [原版启动器安装、更新与预下载流程逆向记录](docs/ORIGINAL_LAUNCHER_FLOW.md)
 - [实现状态、已知缺口与验收标准](docs/IMPLEMENTATION_STATUS.md)
 - [本地测试步骤与问题反馈清单](docs/LOCAL_TESTING.md)
+- [明早实服测试要点](docs/NEXT_LIVE_TEST.md)
+- [Yostar 日本启动器兼容性调查](docs/YOSTAR_COMPAT_RESEARCH.md)
 
 请先阅读实现状态、原版流程和本地测试文档。核心工作流已经实现，但尚未完成整包下载、升级与游戏启动的实服验收。
 
