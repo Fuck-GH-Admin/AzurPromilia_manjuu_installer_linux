@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - feature/downloader-reliability-20261125
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
