@@ -120,7 +120,7 @@ func downloadAfterPreflight(ctx context.Context, root string, e Entry, cdn []str
 }
 
 func downloadFile(ctx context.Context,root string,e Entry,cdn []string,network *atomic.Int64,checkExisting bool)error{
- p,err:=safe(root,e.Name);if err!=nil{return err};if !validMD5(e.MD5)||e.Size<0{return errors.New("invalid file checksum or size")}
+ p,err:=safe(root,e.Name);if err!=nil{return err};if !validMD5(e.MD5)||e.Size<0||e.Size>=maxInt64{return errors.New("invalid file checksum or size")}
  if st, statErr := os.Lstat(p); statErr == nil && !st.Mode().IsRegular() { return fmt.Errorf("download destination is not a regular file: %s", p) } else if statErr != nil && !os.IsNotExist(statErr) { return statErr }; if checkExisting && verify(p,e){return nil}
  if err=os.MkdirAll(filepath.Dir(p),0755);err!=nil{return err}
  part:=p+".part";if st,err:=os.Lstat(part);err==nil&&!st.Mode().IsRegular(){return fmt.Errorf("unsafe partial file %s",part)}
@@ -218,7 +218,7 @@ func parseIndex(raw []byte,slice bool)(Manifest,error){
   if len(a)!=5{return m,fmt.Errorf("unknown index row (%d columns)",len(a))}
   name,size,hash:=a[3],a[1],a[2];if slice{name,size,hash=a[3],a[2],a[3]}
   name=strings.ReplaceAll(name,"\\","/");n,e:=strconv.ParseInt(size,10,64)
-  if e!=nil||n<0||!validMD5(hash)||seen[strings.ToLower(name)]{return m,fmt.Errorf("invalid or duplicate record %q",name)}
+  if e!=nil||n<0||n>=maxInt64||!validMD5(hash)||seen[strings.ToLower(name)]{return m,fmt.Errorf("invalid or duplicate record %q",name)}
   if _,e=safe("/tmp",name);e!=nil{return m,e}
   if reservedGamePath(name)||strings.HasSuffix(strings.ToLower(name),".part"){return m,errors.New("reserved file path")}
   seen[strings.ToLower(name)]=true;m.Files=append(m.Files,Entry{name,a[4],hash,n})
