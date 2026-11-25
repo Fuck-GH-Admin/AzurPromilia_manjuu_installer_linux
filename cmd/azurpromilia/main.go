@@ -258,10 +258,12 @@ func runFileWorkers(ctx context.Context, files []Entry, workers int, stopOnError
 					continue
 				}
 				failed.Add(1)
+				logf("FAIL %s: %v", entry.Name, err)
 				firstMu.Lock()
 				if first == nil {
 					first = err
 					if stopOnError {
+						logf("STOP: cancelling remaining downloads after first failed file")
 						cancel()
 					}
 				}
@@ -292,6 +294,9 @@ send:
 }
 
 func runFiles(ctx context.Context, root string, m Manifest, workers int, onlyVerify bool) error {
+	if workers < 1 || workers > 32 {
+		return errors.New("workers must be 1..32")
+	}
 	var network, done, verified atomic.Int64
 	var total int64
 	for _, entry := range m.Files {
