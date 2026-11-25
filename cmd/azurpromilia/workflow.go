@@ -557,14 +557,14 @@ func printPackageInfo(response Response) error {
 		var value any
 		if json.Unmarshal(response.Data.GameConfig, &value) == nil {
 			b, _ := json.MarshalIndent(value, "", "  ")
-			fmt.Printf("Game config metadata: %s\\n", b)
+			fmt.Printf("Game config metadata: %s\n", b)
 		}
 	}
 	if len(response.Data.LaunchInfo) > 0 && string(response.Data.LaunchInfo) != "null" {
 		var value any
 		if json.Unmarshal(response.Data.LaunchInfo, &value) == nil {
 			b, _ := json.MarshalIndent(value, "", "  ")
-			fmt.Printf("Launch metadata (for manual Proton setup): %s\\n", b)
+			fmt.Printf("Launch metadata (for manual Proton setup): %s\n", b)
 		}
 	}
 	return nil
@@ -778,14 +778,16 @@ func preloadRelease(ctx context.Context, root, state, installer string, response
 	if version == releaseVersion(current) {
 		return errors.New("preload version is identical to released version")
 	}
-	cur, _, err := fetchManifest(ctx, root, state, installer, current, 2)
+	cur, curRaw, err := fetchManifest(ctx, root, state, installer, current, 2)
 	if err != nil {
 		return fmt.Errorf("fetch current release index: %w", err)
 	}
-	pre, _, err := fetchManifest(ctx, root, state, installer, preload, 2)
+	pre, preRaw, err := fetchManifest(ctx, root, state, installer, preload, 2)
 	if err != nil {
 		return fmt.Errorf("fetch preload index: %w", err)
 	}
+	if err = saveOfficialIndex(root, cur.Version, curRaw); err != nil { return err }
+	if err = saveOfficialIndex(root, pre.Version, preRaw); err != nil { return err }
 	currentByName := make(map[string]string, len(cur.Files))
 	for _, f := range cur.Files {
 		currentByName[strings.ToLower(filepath.ToSlash(f.Name))] = strings.ToLower(f.MD5)
