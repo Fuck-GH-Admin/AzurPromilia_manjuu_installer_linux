@@ -53,14 +53,15 @@ func requireFreeSpace(path string, required int64, operation string) error {
 	if required < 0 {
 		return fmt.Errorf("invalid negative space requirement for %s: %d", operation, required)
 	}
-	if required == 0 {
-		return nil
-	}
 	available, err := availableBytes(path)
 	if err != nil {
 		return err
 	}
-	return checkAvailableSpace(uint64(required), available, operation)
+	if err := checkAvailableSpace(uint64(required), available, operation); err != nil {
+		return err
+	}
+	logf("SPACE preflight (%s): need %s; available %s", operation, formatBytes(uint64(required)), formatBytes(available))
+	return nil
 }
 
 // preflightFiles hashes existing files once, then estimates the additional bytes
