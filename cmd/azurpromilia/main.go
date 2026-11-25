@@ -321,9 +321,8 @@ func runFiles(ctx context.Context, root string, m Manifest, workers int, onlyVer
 
 	valid := map[string]bool(nil)
 	if !onlyVerify {
-		var required int64
 		var err error
-		valid, required, err = preflightFiles(root, m.Files)
+		valid, _, err = preflightFiles(root, m.Files)
 		if err != nil {
 			return err
 		}
