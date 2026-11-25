@@ -3,7 +3,7 @@
 > 更新日期：2026-11-25  
 > 状态：开发版 / 两种包类型的小文件实服探测通过；自动安装、预下载、升级和修复代码已加入，完整流程仍待本地实服验收。
 
-> 下一阶段执行顺序见 [NEXT_IMPLEMENTATION_PLAN.md](NEXT_IMPLEMENTATION_PLAN.md)；真实上游验收证据统一写入 [END_TO_END_VALIDATION.md](END_TO_END_VALIDATION.md)。这两份文件是计划和证据账本，不代表全量安装、更新或启动已经验收。
+> 接下来只做两件事：先补可靠性，再用真实服务器跑通完整安装和版本管理。具体顺序见 [NEXT_IMPLEMENTATION_PLAN.md](NEXT_IMPLEMENTATION_PLAN.md)。全量安装和更新仍未验收。
 
 本文以仓库当前 Go 源码、工作流和用户提供的 Windows 安装器 `AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe` 为依据。区分“源码已经实现”“原始 EXE 中已确认”“仍需真实环境验证”，不把单元测试或本地 HTTP 测试当成官方服务端证据。
 
