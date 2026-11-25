@@ -93,6 +93,8 @@ func ensurePackageConfig(ctx context.Context, installer, requested, state, pytho
 	out := requested
 	if out == "" {
 		out = filepath.Join(state, "packageconfig.json")
+		// Never silently reuse stale server metadata for an update check.
+		refresh = true
 	}
 	abs, err := filepath.Abs(out)
 	if err != nil {
