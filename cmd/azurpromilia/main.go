@@ -226,7 +226,7 @@ func extractZIP(path,root string)error{
  z,e:=zip.OpenReader(path);if e!=nil{return e};defer z.Close()
  for _,f:=range z.File{
   name:=strings.TrimSuffix(strings.ReplaceAll(f.Name,"\\","/"),"/")
-  if strings.HasPrefix(name,".azurpromilia")||f.Mode()&os.ModeSymlink!=0{return fmt.Errorf("unsafe ZIP entry %s",name)}
+  lower:=strings.ToLower(name);if strings.HasPrefix(lower,".azurpromilia")||lower=="_index"||strings.HasPrefix(lower,"_index/")||lower=="_pre_download"||strings.HasPrefix(lower,"_pre_download/")||f.Mode()&os.ModeSymlink!=0{return fmt.Errorf("unsafe ZIP entry %s",name)}
   p,e:=safe(root,name);if e!=nil{return e}
   if f.FileInfo().IsDir(){if e=os.MkdirAll(p,0755);e!=nil{return e};continue}
   if e=os.MkdirAll(filepath.Dir(p),0755);e!=nil{return e}
