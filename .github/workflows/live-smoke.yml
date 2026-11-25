@@ -82,8 +82,12 @@ jobs:
           $hash = (Get-FileHash original.exe -Algorithm SHA256).Hash.ToLower()
           $size = (Get-Item original.exe).Length
           Write-Host "Installer bytes=$size sha256=$hash"
-          if ($hash -ne 'cf4b1f6233af2f2cb2d1c0de12f54d07606c3c84c829390b6caccfb2d0d1f04b') {
-            throw "Official installer changed: sha256=$hash. Refusing to run bootstrap against an unreviewed binary."
+          $allowedHashes = @(
+            'cf4b1f6233af2f2cb2d1c0de12f54d07606c3c84c829390b6caccfb2d0d1f04b',
+            'dde29b4fa4a6eabfb664838c807460e65746f590f1a51754a33d976763bb1e3f'
+          )
+          if ($allowedHashes -notcontains $hash) {
+            throw "Official installer hash is not one of the reviewed probe samples: sha256=$hash"
           }
 
       - name: Fetch genuine package metadata
