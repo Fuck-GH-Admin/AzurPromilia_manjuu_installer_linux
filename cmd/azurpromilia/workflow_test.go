@@ -152,3 +152,120 @@ func TestSelectPackageTypeDoesNotOverrideKnownServerMode(t *testing.T) {
 		t.Fatal("downloadMode=REALITY must not silently fall back to SLICE")
 	}
 }
+
+
+func TestRunFileWorkersCancelsInFlightAndStopsDispatch(t *testing.T) {
+	files := []Entry{{Name: "bad"}, {Name: "slow"}, {Name: "never"}}
+	sentinel := errors.New("first file failed")
+	var started sync.WaitGroup
+	started.Add(2)
+	var mu sync.Mutex
+	called := make(map[string]int)
+
+	process := func(ctx context.Context, entry Entry) error {
+		mu.Lock()
+		called[entry.Name]++
+		mu.Unlock()
+		if entry.Name == "never" {
+			return nil
+		}
+		started.Done()
+		if entry.Name == "bad" {
+			started.Wait()
+			return sentinel
+		}
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	stats := runFileWorkers(context.Background(), files, 2, true, process)
+	if !errors.Is(stats.First, sentinel) {
+		t.Fatalf("first error = %v, want %v", stats.First, sentinel)
+	}
+	if stats.Failed != 1 {
+		t.Fatalf("failed = %d, want 1", stats.Failed)
+	}
+	if stats.Cancelled < 1 {
+		t.Fatalf("cancelled = %d, want at least 1", stats.Cancelled)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if called["never"] != 0 {
+		t.Fatalf("queued task started after first failure: %+v", called)
+	}
+}
+
+func TestRunFileWorkersKeepsScanningWhenStopOnErrorDisabled(t *testing.T) {
+	sentinel := errors.New("verification mismatch")
+	files := []Entry{{Name: "bad"}, {Name: "good"}}
+	var mu sync.Mutex
+	called := make(map[string]int)
+	stats := runFileWorkers(context.Background(), files, 1, false, func(_ context.Context, entry Entry) error {
+		mu.Lock()
+		called[entry.Name]++
+		mu.Unlock()
+		if entry.Name == "bad" {
+			return sentinel
+		}
+		return nil
+	})
+	if !errors.Is(stats.First, sentinel) || stats.Failed != 1 || stats.Completed != 1 {
+		t.Fatalf("unexpected worker stats: %+v", stats)
+	}
+	if called["bad"] != 1 || called["good"] != 1 {
+		t.Fatalf("verification did not inspect all entries: %+v", called)
+	}
+}
+
+func TestRequiredExtractionBytesCountsMissingAndCorruptFiles(t *testing.T) {
+	root := t.TempDir()
+	good := []byte("good")
+	corrupt := []byte("evil")
+	if err := os.WriteFile(filepath.Join(root, "good.bin"), good, 0644); err != nil {
+		t.Fatal(err)
+	}
+	entries := []ExtractedEntry{
+		{Name: "good.bin", Size: int64(len(good)), CRC32: crc32.ChecksumIEEE(good)},
+		{Name: "corrupt.bin", Size: int64(len(good)), CRC32: crc32.ChecksumIEEE(good)},
+		{Name: "missing.bin", Size: 7, CRC32: crc32.ChecksumIEEE([]byte("missing"))},
+	}
+	if err := os.WriteFile(filepath.Join(root, "corrupt.bin"), corrupt, 0644); err != nil {
+		t.Fatal(err)
+	}
+	required, err := requiredExtractionBytes(root, entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := int64(len(good) + 7)
+	if required != want {
+		t.Fatalf("required bytes = %d, want %d", required, want)
+	}
+}
+
+func TestZipExtractedEntriesRejectsFileDirectoryConflict(t *testing.T) {
+	root := t.TempDir()
+	archive := filepath.Join(root, "conflict.zip")
+	f, err := os.Create(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	for _, name := range []string{"a/b.txt", "a"} {
+		w, createErr := zw.Create(name)
+		if createErr != nil {
+			t.Fatal(createErr)
+		}
+		if _, writeErr := w.Write([]byte("payload")); writeErr != nil {
+			t.Fatal(writeErr)
+		}
+	}
+	if err = zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = zipExtractedEntries(archive); err == nil {
+		t.Fatal("accepted a file that conflicts with a directory path")
+	}
+}
