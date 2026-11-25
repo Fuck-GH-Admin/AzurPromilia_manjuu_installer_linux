@@ -201,7 +201,7 @@ func selectPackageType(downloadMode int, override string, packages []Package) (i
 	if has(want) {
 		return want, nil
 	}
-	if override == "auto" {
+	if override == "auto" && downloadMode != 1 && downloadMode != 2 {
 		if want == 1 && has(2) {
 			return 2, nil
 		}
