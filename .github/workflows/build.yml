@@ -31,3 +31,50 @@ jobs:
         with:
           name: azurpromilia-linux
           path: dist/
+  yostar-static:
+    if: github.head_ref == 'feature/downloader-reliability-20261125' || github.ref == 'refs/heads/feature/downloader-reliability-20261125'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Resolve current official Yostar installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          curl.exe --fail --location --proto '=https' --proto-redir '=https' --max-time 90 --output pcdownload.html 'https://azurpromilia.jp/PCdownload'
+          if ($LASTEXITCODE -ne 0) { throw 'PCdownload request failed' }
+          $html = Get-Content pcdownload.html -Raw
+          $matches = [regex]::Matches($html, 'https://[^"''<>\s]+\.exe(?:\?[^"''<>\s]*)?', 'IgnoreCase')
+          $urls = @($matches | ForEach-Object { $_.Value.Replace('&amp;', '&') } | Select-Object -Unique)
+          $url = $urls | Where-Object { ([uri]$_).Host.ToLower() -eq 'launcher-pkg-azupro-jp.yo-star.com' } | Select-Object -First 1
+          if (-not $url) { throw 'No allowlisted Yostar installer URL found on official PCdownload page' }
+          "installer_host=$(([uri]$url).Host)" | Set-Content yostar-origin.txt
+          curl.exe --fail --location --proto '=https' --proto-redir '=https' --max-time 180 --output yostar-installer.exe $url
+          if ($LASTEXITCODE -ne 0) { throw 'installer download failed' }
+      - name: Inspect PE, archive signatures and protocol markers
+        shell: pwsh
+        run: |
+          python tools/yostar_static_probe.py yostar-installer.exe --out yostar-report.txt
+          Get-Content yostar-origin.txt | Add-Content yostar-report.txt
+      - name: Ask 7-Zip what the installer contains
+        shell: pwsh
+        run: |
+          "`n== 7ZIP LISTING ==" | Add-Content yostar-report.txt
+          7z l yostar-installer.exe | Out-File -Append -Encoding utf8 yostar-report.txt
+          New-Item -ItemType Directory -Force yostar-extracted | Out-Null
+          7z x -y -oyostar-extracted yostar-installer.exe | Out-File -Append -Encoding utf8 yostar-report.txt
+          "`n== EXTRACTED TOP LEVEL ==" | Add-Content yostar-report.txt
+          Get-ChildItem yostar-extracted -Force | Select-Object Name,Length,Mode | Format-Table -AutoSize | Out-String -Width 300 | Add-Content yostar-report.txt
+          "`n== INTERESTING EXTRACTED FILES ==" | Add-Content yostar-report.txt
+          Get-ChildItem yostar-extracted -Recurse -Force -File |
+            Where-Object { $_.Name -match '(?i)(asar|json|config|launcher|electron|dll|exe|pak|dat|7z|zip)$' -or $_.FullName -match '(?i)(resources|app\.asar|node_modules|launcher)' } |
+            Select-Object -First 300 FullName,Length |
+            Format-Table -AutoSize | Out-String -Width 300 | Add-Content yostar-report.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yostar-installer-static-report
+          path: yostar-report.txt
+          retention-days: 7
