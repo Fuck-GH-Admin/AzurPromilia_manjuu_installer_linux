@@ -160,3 +160,17 @@ GitHub Actions 验证记录：
 - [ ] 测试中断、磁盘空间不足和网络故障后的恢复行为。
 - [ ] 第一阶段新增的 worker 取消、磁盘预检查与 ZIP 安全回归测试通过 GitHub Actions。
 
+
+
+## 6. GitHub Actions 真实公网探测（2026-11-26 凌晨）
+
+为确认是否可以在用户本机断电期间先用 GitHub hosted runner 做真实服务器探测，临时加入并运行了 Windows Actions 公网探针。结果如下：
+
+- Run #3（`45660232078`）从 GitHub Windows hosted runner 直接访问 `https://azurpromilia.jp/` 和 `/PCdownload`，均得到 HTTP 200。
+- 同一 runner 直连 `https://api-grp.manjuu.com/` 和 `https://api-grp-l2.manjuu.com/`，根路径均得到 HTTP 404。这证明 DNS、TLS 和 HTTP 出站链路正常；404 只是根路径没有业务路由。
+- `PCdownload` 页面能解析出 Yostar 官方安装器地址，host 为 `launcher-pkg-azupro-jp.yo-star.com`。Actions 实际下载了 179,893,048 字节，SHA-256 为 `dde29b4fa4a6eabfb664838c807460e65746f590f1a51754a33d976763bb1e3f`。
+- 该 SHA 与本项目已逆向的 Manjuu/SC000 样本 `cf4b1f6233af2f2cb2d1c0de12f54d07606c3c84c829390b6caccfb2d0d1f04b` 不同，因此第一轮按预期停止，没有把未知新包误当作旧样本。
+- Run #5（`45660583827`）在确认下载来源和新 SHA 后继续测试。外网检查和安装器下载均成功，但 `tools/bootstrap.py` 对该日本 Yostar 安装器报 `embedded launcher ZIP not found`。因此它不是当前 Manjuu/SC000 bootstrap 所支持的同一安装器封装格式。
+- 结论：**GitHub Actions 可以访问官方公网和下载大型官方安装器；当前阻塞不是 Actions 网络，而是测试安装器渠道/封装格式不一致。**
+
+这两次 Actions 没有完成 Manjuu/SC000 的真实 packageconfig + CDN 小资源验证，因此不能替代后续使用正确 SC000 安装器进行的实服测试。临时自动探针在取证后删除，避免每次 PR 更新都重复下载约 171.5 MiB 的日本安装器；原有手动 `.github/workflows/live-probe.yml` 保留。
