@@ -307,3 +307,21 @@ go vet ./...
 ```
 
 这些本地测试只验证下载器自身的调度、空间估算和 ZIP 处理逻辑，不代表官方 CDN 的全量下载已经通过。
+
+
+## 13. Actions 公网能力确认与凌晨测试边界（2026-11-26）
+
+GitHub hosted Windows runner 已确认可以访问官方网络，不需要把“Actions 无公网”当作风险项：
+
+- 日本官网和 `PCdownload`：HTTP 200。
+- `api-grp.manjuu.com`、`api-grp-l2.manjuu.com`：根路径 HTTP 404，但连接、TLS 和 HTTP 请求均成功。
+- Actions 可从 `launcher-pkg-azupro-jp.yo-star.com` 下载当前日本官方安装器；本次实测 179,893,048 字节。
+- 当前日本包 SHA-256：`dde29b4fa4a6eabfb664838c807460e65746f590f1a51754a33d976763bb1e3f`。
+- 该日本包不是现有 Manjuu/SC000 bootstrap 使用的内嵌 ZIP 封装，运行 `tools/bootstrap.py` 会明确失败为 `embedded launcher ZIP not found`。
+
+对应 Actions：
+
+- 网络与新 SHA 发现：Run #3 / `45660232078`
+- 新安装器结构验证：Run #5 / `45660583827`
+
+因此后续 Manjuu/SC000 的完整链路仍应使用我们已经验证过结构的原始 SC000 安装器。等本机具备供电和磁盘条件后，直接按第 11 节执行 `info -> install -> verify -> repair`；有真实 preload/新版本时再继续 `preload -> update -> verify`。
