@@ -1,5 +1,5 @@
 "use strict";
-const fs = require("original-fs"); // Read app.asar as a file, outside Electron's virtual filesystem.
+const fs = require("original-fs");
 const https = require("node:https");
 const path = require("node:path");
 const os = require("node:os");
@@ -15,10 +15,8 @@ client.extApi2(config.secretKey, config.appId, config.channelCode);
 const bundle = fs.readFileSync(path.join(root, "resources/app.asar"));
 const version = bundle.toString("latin1").match(/launcher@([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/)?.[1];
 if (!version) throw Error("Launcher version not found");
-const data = {launcherId: String(config.launcherId), uid: ""};
-const query = Object.keys(data).sort().map(k => k + "=" + data[k]).join("&");
 const headers = {
-  "device-id": "", // The anonymous endpoint requires the header and accepts an empty value.
+  "device-id": "",
   "grp-app-id": String(config.appId),
   "grp-platform": "Launcher",
   "grp-channel-code": String(config.channelCode),
@@ -29,13 +27,14 @@ const headers = {
   lang: "zh-Hans",
   "grp-client-info": JSON.stringify({device_model:"Launcher", device_os:os.type(), device_os_version:os.release(), app_version:version})
 };
-// Only the normal anonymous package request. Do not collect account tokens,
-// export keys, disable TLS validation, or work around authorization failures.
-function get(host) {
+
+function get(host, endpoint, data) {
   return new Promise((resolve, reject) => {
     const timestamp = Date.now();
+    const query = Object.keys(data).sort().map(k => k + "=" + data[k]).join("&");
     const sign = client.extApi3(String(timestamp) + query);
-    const req = https.get("https://" + host + "/pc-launcher/client/gameversion/packageconfig?" + new URLSearchParams(data), {
+    const url = "https://" + host + endpoint + "?" + new URLSearchParams(data);
+    const req = https.get(url, {
       headers: {...headers, timestamp: String(timestamp), sign: String(sign)}
     }, res => {
       let raw = "";
@@ -46,45 +45,93 @@ function get(host) {
       });
       res.on("error", reject);
       res.on("end", () => {
-        if (res.statusCode !== 200) return reject(Error("HTTP " + res.statusCode));
+        if (res.statusCode !== 200) return reject(Error("HTTP " + res.statusCode + " for " + endpoint));
         try {
           const parsed = JSON.parse(raw);
-          if (parsed.code !== 0) throw Error("Official API code " + parsed.code);
-          if (!parsed.data?.released?.gamePackageList?.length && !parsed.data?.preload?.gamePackageList?.length) throw Error("No game packages in response");
+          if (parsed.code !== 0) throw Error("API code " + parsed.code + " for " + endpoint);
           resolve(parsed);
         } catch (e) { reject(e); }
       });
     });
-    req.setTimeout(15000, () => req.destroy(Error("request timeout")));
+    req.setTimeout(15000, () => req.destroy(Error("request timeout for " + endpoint)));
     req.on("error", reject);
   });
 }
+
+function compactPackage(p) {
+  return {
+    packageType:p.packageType, downloadUrl:p.downloadUrl, fileMd5:p.fileMd5,
+    fileSize:p.fileSize, cdnBaseUrls:p.cdnBaseUrls
+  };
+}
+function compactRelease(r) {
+  if (!r) return null;
+  const out = {};
+  for (const k of ["versionCode","versionName","gameName","gameFolderName","launchEntry","packageSize","gameExcludedFileList","domainList"]) {
+    if (r[k] !== undefined) out[k] = r[k];
+  }
+  out.gamePackageList = (r.gamePackageList || []).map(compactPackage);
+  return out;
+}
+function compactLaunch(data) {
+  if (!data) return null;
+  const out = {};
+  for (const k of ["launchEntry","launchParams","gameRuntimeParams"]) {
+    if (data[k] !== undefined) out[k] = data[k];
+  }
+  return out;
+}
+
 (async () => {
   let last;
   for (const host of ["api-grp.manjuu.com","api-grp-l2.manjuu.com"]) {
     try {
-      const response = await get(host);
-      // Keep only fields needed by the downloader; no user/session information.
-      const result = {code:0,data:{}};
-      for (const name of ["released","preload"]) {
-        const r = response.data[name];
-        if (!r) continue;
-        result.data[name] = {
-          versionCode:r.versionCode, versionName:r.versionName, domainList:r.domainList,
-          gamePackageList:(r.gamePackageList || []).map(p => ({
-            packageType:p.packageType, downloadUrl:p.downloadUrl, fileMd5:p.fileMd5,
-            fileSize:p.fileSize, cdnBaseUrls:p.cdnBaseUrls
-          }))
-        };
+      const pkg = await get(host, "/pc-launcher/client/gameversion/packageconfig", {
+        launcherId: String(config.launcherId), uid: ""
+      });
+      if (!pkg.data?.released?.gamePackageList?.length) throw Error("packageconfig has no released game packages");
+
+      let gameConfig = null;
+      try {
+        const cfg = await get(host, "/pc-launcher/client/gameversion/config", {
+          launcherId: String(config.launcherId)
+        });
+        gameConfig = compactRelease(cfg.data?.released || cfg.data);
+      } catch (e) {
+        console.error("Optional game config unavailable:", e.message);
       }
+
+      let launchInfo = null;
+      const gameVersionCode = pkg.data.released.versionCode;
+      if (gameVersionCode !== undefined && gameVersionCode !== null) {
+        try {
+          const launch = await get(host, "/pc-launcher/client/gameversion/pre/check", {
+            launcherId: String(config.launcherId), gameVersionCode: String(gameVersionCode), uid: ""
+          });
+          launchInfo = compactLaunch(launch.data);
+        } catch (e) {
+          console.error("Optional launch metadata unavailable:", e.message);
+        }
+      }
+
+      const result = {
+        code: 0,
+        data: {
+          downloadMode: pkg.data.downloadMode,
+          released: compactRelease(pkg.data.released),
+          preload: compactRelease(pkg.data.preload),
+          gameConfig,
+          launchInfo
+        }
+      };
       fs.writeFileSync(path.join(root,"packageconfig.json"),JSON.stringify(result,null,2),{flag:"wx"});
-      console.log("Official package metadata received");
+      console.log("Official package metadata received from", host);
       return;
     } catch(e) {
       last=e;
       console.error(host + ": " + e.message);
     }
   }
-  console.error("No successful official response:",last?.message);
+  console.error("No successful official packageconfig response:",last?.message);
   process.exitCode=1;
 })();
