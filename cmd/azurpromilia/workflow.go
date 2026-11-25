@@ -412,7 +412,7 @@ func ensureDirectories(root string, dirs []string) error {
 
 func excludedPath(name string, exclusions []ExcludedFile) bool {
 	name = strings.ToLower(strings.Trim(strings.ReplaceAll(name, "\\", "/"), "/"))
-	if name == "_index" || strings.HasPrefix(name, "_index/") || name == "_pre_download" || strings.HasPrefix(name, "_pre_download/") {
+	if name == ".azurpromilia" || strings.HasPrefix(name, ".azurpromilia/") || name == "_index" || strings.HasPrefix(name, "_index/") || name == "_pre_download" || strings.HasPrefix(name, "_pre_download/") {
 		return true
 	}
 	for _, x := range exclusions {
@@ -497,7 +497,7 @@ func zipExtractedEntries(path string) ([]ExtractedEntry, error) {
 		}
 		name := strings.ReplaceAll(f.Name, "\\", "/")
 		key := strings.ToLower(strings.Trim(name, "/"))
-		if key == "" || strings.HasPrefix(key, ".azurpromilia/") || key == "_index" || strings.HasPrefix(key, "_index/") || key == "_pre_download" || strings.HasPrefix(key, "_pre_download/") {
+		if key == "" || reservedGamePath(name) {
 			return nil, fmt.Errorf("ZIP uses reserved or empty path: %s", f.Name)
 		}
 		if seen[key] {
