@@ -121,10 +121,21 @@ func installerKeys(path string)(string,string,error){
 }
 func parseIndex(raw []byte,slice bool)(Manifest,error){
  var m Manifest;seen:=map[string]bool{}
+ records := 0
  s:=bufio.NewScanner(bytes.NewReader(raw));s.Buffer(make([]byte,65536),4<<20)
  for s.Scan(){
   line:=strings.TrimSuffix(strings.TrimSpace(s.Text()),",");if line==""{continue}
   a:=strings.Split(line,",")
+  records++
+  // A per-file index can start with counts for all records, files, and directories.
+  if !slice && records == 1 && len(a) == 3 {
+   for _, field := range a {
+    if _, err := strconv.ParseUint(field, 10, 64); err != nil {
+     return m, errors.New("invalid per-file index counts")
+    }
+   }
+   continue
+  }
   if slice&&len(a)==3{n,e:=strconv.ParseInt(a[1],10,64);if e!=nil||n<0||!validMD5(a[2])||m.Archive!=nil{return m,errors.New("invalid ZIP record")};m.Archive=&Entry{Name:"game.zip",Size:n,MD5:a[2]};continue}
   if !slice&&len(a)==4{m.Directories=append(m.Directories,strings.ReplaceAll(a[3],"\\","/"));continue}
   if len(a)!=5{return m,fmt.Errorf("unknown index row (%d columns)",len(a))}

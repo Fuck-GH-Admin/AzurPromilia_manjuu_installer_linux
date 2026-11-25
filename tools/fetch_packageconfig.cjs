@@ -1,5 +1,5 @@
 "use strict";
-const fs = require("node:fs");
+const fs = require("original-fs"); // Read app.asar as a file, outside Electron's virtual filesystem.
 const https = require("node:https");
 const path = require("node:path");
 const os = require("node:os");
@@ -18,6 +18,7 @@ if (!version) throw Error("Launcher version not found");
 const data = {launcherId: String(config.launcherId), uid: ""};
 const query = Object.keys(data).sort().map(k => k + "=" + data[k]).join("&");
 const headers = {
+  "device-id": "", // The anonymous endpoint requires the header and accepts an empty value.
   "grp-app-id": String(config.appId),
   "grp-platform": "Launcher",
   "grp-channel-code": String(config.channelCode),

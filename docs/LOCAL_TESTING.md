@@ -6,18 +6,26 @@
 
 - Linux x86-64（首轮建议）；
 - Go 1.22 或更新版本；
-- Python 3；
+- Python 3；运行下方的引导脚本语法检查时也需要 Node.js；
 - 原始安装器 `AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe`；
 - 若在 Linux 上运行一次性 metadata bootstrap，需要可用的 64 位 Wine 环境；也可以在 Windows x64 上运行 bootstrap；
 - 足够的磁盘空间和稳定网络。
 
 下载器本体不需要 Wine、Proton、Electron 或 Python 第三方包。Wine 只用于尝试调用原安装器附带的 Windows Electron/N-API 模块取得官方包清单。
 
-## 2. 拉取和编译
+## 2. 拉取、直连和编译
+
+在同一个 Linux shell 中定义以下函数。通过 `direct` 启动的命令会清除本次执行的代理环境变量，覆盖包清单引导和 CDN 下载。Git 的直连配置仅作用于本仓库的 `origin`。
 
 ```bash
-git clone https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux.git
+direct() {
+  env -u http_proxy -u https_proxy -u all_proxy \
+    -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u NODE_USE_ENV_PROXY "$@"
+}
+
+direct git -c http.proxy= clone https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux.git
 cd AzurPromilia_manjuu_installer_linux
+git config --local remote.origin.proxy ''
 git pull --ff-only
 
 go version
@@ -32,17 +40,19 @@ CGO_ENABLED=0 go build -trimpath -o ./azurpromilia ./cmd/azurpromilia
 
 如果编译或测试失败，请先记录完整错误，不要直接修改代码后只报告“现在能运行”。
 
+本机通过直连完成官方包清单请求和 CDN 小文件探测，可以按上述方式运行。下载器支持 Go 的 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY` 及其小写变量。需要使用现有代理配置时，可省略 `direct`。引导脚本目前没有独立的代理选项，代理环境下的实际行为待验证。
+
 ## 3. 获取官方包信息
 
 在 Linux + Wine 环境：
 
 ```bash
-python3 tools/bootstrap.py \\
-  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \\
+direct python3 tools/bootstrap.py \
+  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \
   --out ./packageconfig.json
 ```
 
-如果 Wine 可执行文件不叫 `wine`，可传入 `--wine /path/to/wine`。在 Windows x64 环境可直接运行同一 Python 命令，不需要 `--wine`。
+按实际位置替换安装器路径，中文桌面可能使用 `$HOME/下载`。如果 Wine 可执行文件不叫 `wine`，可传入 `--wine /path/to/wine`。无图形会话时，如果已安装 Xvfb 和 xauth，可用 `direct xvfb-run -a python3` 开头。在 Windows x64 环境运行 `python tools/bootstrap.py` 并使用相应的文件路径。
 
 成功时应生成本地 `packageconfig.json`。该文件可能包含临时 CDN URL，不要提交到 Git、不要上传到公开 issue，也不要把账号 token、Cookie、签名头或密钥贴到聊天中。
 
@@ -53,7 +63,7 @@ python3 tools/bootstrap.py \\
 - 原生模块加载错误或官方 API 返回 code；
 - 不要公开 `app_config.dat` 或 `secretKey`。
 
-注意：bootstrap 当前为实验性匿名请求。它不支持账号登录，也没有完整复现原版设备标识、trace ID 和 `grp-client-info`，失败并不代表 CDN 下载引擎本身失败。
+引导器发送匿名请求，`device-id` 请求头使用空值。已在本机验证 `SC000` 样本，账号登录和其他渠道仍待支持或验证。
 
 ## 4. 第一轮：只做真实服务器小文件探测
 
@@ -61,11 +71,11 @@ python3 tools/bootstrap.py \\
 
 ```bash
 mkdir -p "$HOME/Games/AzurPromilia-probe"
-./azurpromilia download \\
-  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \\
-  --packageconfig ./packageconfig.json \\
-  --root "$HOME/Games/AzurPromilia-probe" \\
-  --workers 2 \\
+direct ./azurpromilia download \
+  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \
+  --packageconfig ./packageconfig.json \
+  --root "$HOME/Games/AzurPromilia-probe" \
+  --workers 2 \
   --probe
 ```
 
@@ -87,10 +97,10 @@ mkdir -p "$HOME/Games/AzurPromilia-probe"
 只有 `--probe` 成功后才建议开始：
 
 ```bash
-./azurpromilia download \\
-  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \\
-  --packageconfig ./packageconfig.json \\
-  --root "$HOME/Games/AzurPromilia-test" \\
+direct ./azurpromilia download \
+  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \
+  --packageconfig ./packageconfig.json \
+  --root "$HOME/Games/AzurPromilia-test" \
   --workers 4
 ```
 
@@ -107,11 +117,11 @@ mkdir -p "$HOME/Games/AzurPromilia-probe"
 ## 6. 第三轮：切片包（仅在服务器确实提供时）
 
 ```bash
-./azurpromilia download \\
-  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \\
-  --packageconfig ./packageconfig.json \\
-  --root "$HOME/Games/AzurPromilia-slice-test" \\
-  --workers 4 \\
+direct ./azurpromilia download \
+  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \
+  --packageconfig ./packageconfig.json \
+  --root "$HOME/Games/AzurPromilia-slice-test" \
+  --workers 4 \
   --slice
 ```
 
@@ -126,19 +136,19 @@ mkdir -p "$HOME/Games/AzurPromilia-probe"
 ## 7. 预下载模式：仅验证暂存，不应用
 
 ```bash
-./azurpromilia download \\
-  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \\
-  --packageconfig ./packageconfig.json \\
-  --root "$HOME/Games/AzurPromilia-test" \\
+direct ./azurpromilia download \
+  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \
+  --packageconfig ./packageconfig.json \
+  --root "$HOME/Games/AzurPromilia-test" \
   --target preload
 ```
 
 查看对应版本号后：
 
 ```bash
-./azurpromilia verify \\
-  --root "$HOME/Games/AzurPromilia-test" \\
-  --target preload \\
+./azurpromilia verify \
+  --root "$HOME/Games/AzurPromilia-test" \
+  --target preload \
   --version VERSION_CODE
 ```
 
@@ -159,3 +169,37 @@ mkdir -p "$HOME/Games/AzurPromilia-probe"
 ## 9. Proton
 
 下载器不启动游戏，也不修改 Proton。待资源下载和校验完成后，再将实际游戏入口添加到 Steam，选择 Proton/GE-Proton，并使用独立 CompatData 前缀。游戏入口和实际运行兼容性以完整安装后检查到的文件为准。
+
+## 10. 本机实测记录（2026-11-25）
+
+- Ubuntu 26.04.1 x86-64、Go 1.27.0、Python 3.14.4、Node.js 22.23.4、Wine 10.0。Go race 测试、vet、Python/Node 语法检查和 Linux amd64 构建均通过。
+- 原始安装器的 SHA-256 与仓库记录一致。Go CLI 能提取索引参数。使用本地 HTTP 服务和测试数据运行了索引解密、`--probe`、逐文件下载、`verify` 和重复下载跳过已校验资源。
+- GitHub 拉取和以下官方 API、CDN 请求均使用直连，保留 TLS 校验。
+
+### 匿名包清单
+
+修正 Electron 的 ASAR 读取后，在独立 Wine 前缀中对照原版请求头逐项测试。
+
+| 请求头变化 | API 主站 | API 备用站 |
+|---|---|---|
+| 原引导请求 | HTTP 400，JSON `Bad Request`，无业务码 | HTTP 400，同样的错误 |
+| 仅增加空 `grp-trace-id` | HTTP 400 | 未单测 |
+| 仅增加空 `device-id` | HTTP 200，`code=0` | HTTP 200，`code=0` |
+| 两个头均为空 | HTTP 200，`code=0` | 未单测 |
+
+API 主站为 `api-grp.manjuu.com`，备用站为 `api-grp-l2.manjuu.com`。引导器增加空 `device-id` 后，正常运行 `tools/bootstrap.py` 生成了包清单。该响应提供正式版 `versionCode=1.0.0.30`（`versionName=1.0.0`）的切片包和逐文件包。
+
+### 官方 CDN
+
+逐文件包的第一条记录是三列计数 `40486,40457,29`，对应文件与目录的总数、文件数和目录数。原版逐文件解析器跳过该记录。Linux 解析器修复后接收这种计数头，继续校验并解析后续目录、文件记录。
+
+| 包类型 | 索引大小 | 解析的资源 | 探测资源大小 | 结果 |
+|---|---:|---:|---:|---|
+| 逐文件包（`packageType=2`） | 15,024,044 字节 | 40,457 个文件，29 个目录 | 4 字节 | `LIVE PROBE OK` |
+| 切片包（`packageType=1`） | 148,184 字节 | 752 个分片 | 45,275,761 字节 | `LIVE PROBE OK` |
+
+主 CDN `syncstation.manjuu.com` 和备用 CDN `l2-syncstation.manjuu.com` 分别在新的测试目录中通过两种探测。每次均完成索引下载、MD5 与大小校验、解密、解析，以及资源的 MD5 与大小校验。
+
+用已验证分片的前 42,991,616 字节创建 `.part` 后，下载器发送 `Range: bytes=42991616-`，主 CDN 返回 `206` 和 `Content-Range: bytes 42991616-45275760/45275761`，续传后的文件通过校验。
+
+全量下载、切片合并和解压、预下载、游戏启动仍待实服验证。

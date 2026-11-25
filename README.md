@@ -1,6 +1,6 @@
 # AzurPromilia Manjuu Installer Linux
 
-非官方 Linux 原生 CLI。已编写 CDN 下载、索引解析、断点续传、MD5/大小验证等核心代码，但**尚未完成真实官方 CDN 验收**。当前为开发版，不应视为开服即用的正式发行版。
+非官方 Linux 原生 CLI。本机已通过官方包清单获取、两种包类型的 CDN 小文件探测和切片续传测试。当前为开发版，全量安装和游戏启动仍待验证。
 
 ## 当前状态与本地测试
 
@@ -8,6 +8,8 @@
 - [本地测试步骤与问题反馈清单](docs/LOCAL_TESTING.md)
 
 请先阅读这两份文档，再开始真实下载。当前 API bootstrap 仅为实验性匿名请求；预下载补丁、升级/修复、自动下载模式选择均未完成。
+
+实测记录包含 HTTP 400 的对照结果、官方索引数据及 Range 续传的响应。[本机实测记录与直连命令](docs/LOCAL_TESTING.md)
 
 ## 构建
 
@@ -26,7 +28,7 @@ GitHub Actions 在每次 push 时运行 Go 测试、vet 和 Linux amd64/arm64 �
 python3 tools/bootstrap.py --installer /path/to/original.exe --out packageconfig.json
 ```
 
-引导器尝试调用原版 Electron/N-API 组件生成匿名包清单请求；请求头尚未完整复现，且没有账号登录支持，暂未实服验收。若官方接口拒绝匿名请求，停止并报告错误，不尝试绕过。下载器本身仍完全原生 Linux，不依赖 Wine。亦可直接导入自己合法获得的原始包清单。不要公开 packageconfig.json（其中可能有临时 CDN URL）。
+引导器调用原版 Electron/N-API 组件生成匿名包清单请求，已在 Wine 10.0 和 `SC000` 样本上通过。若官方接口拒绝匿名请求，请停止并记录错误。下载器本身是 Linux 原生程序，也可直接导入自己取得的官方包清单。请将 `packageconfig.json` 保留在本机，其中可能有临时 CDN URL。
 
 ## 下载
 
@@ -41,14 +43,11 @@ python3 tools/bootstrap.py --installer /path/to/original.exe --out packageconfig
 
 ## 实服探测
 
-实服探测工作流只是可手动触发的验证工具，目前没有成功运行记录；在用户本地验收前，不要将其视为通过。
-
-
-Actions 中的 Official CDN live probe 支持手动输入该原始安装器的官方 HTTPS URL；先核对样本 SHA256，再使用官方组件取得包清单、下载并校验实际索引及一个不超过 64 MiB 的资源。不会上传游戏文件、包清单或密钥。它与完整下载命令独立，只是实服兼容性检查。尚未运行成功，不应视为已验收。
+Linux 本机实测通过。Actions 中的 Official CDN live probe 是独立的手动验证入口，仍待运行。输入原始安装器的官方 HTTPS URL 后，工作流会核对样本 SHA-256，获取包清单，并下载和校验索引及一个不超过 64 MiB 的资源。
 
 ## 证据与限制
 
-样本 SHA256 cf4b1f6233af2f2cb2d1c0de12f54d07606c3c84c829390b6caccfb2d0d1f04b。内部 ZIP 位于偏移 12453620，包含 resources/app.asar、res/app_config.dat 和 Windows cutils.node。main.js 的 parseGameIndex 是 5 列记录（大小、MD5、相对路径、CDN 路径）；parseInstallIndex 使用 3 列 ZIP 记录及 5 列切片记录。索引为 Base64 编码的 AES-CBC，先按 API 返回的大小和 MD5 验证密文。原始 API 入口 /pc-launcher/client/gameversion/packageconfig，签名由原版 Windows 原生模块处理，尚未完成 Linux 签名兼容或实服验证。MD5 用于兼容官方校验，不是可信数字签名。测试服务器只验证下载行为，不能证明官方 CDN 可访问。尚未实现自动版本发现、预下载差异比较/合并、旧文件清理。
+样本 SHA-256 为 `cf4b1f6233af2f2cb2d1c0de12f54d07606c3c84c829390b6caccfb2d0d1f04b`。内部 ZIP 位于偏移 12453620，包含 `resources/app.asar`、`res/app_config.dat` 和 Windows `cutils.node`。逐文件索引包含三列计数头、四列目录记录和五列文件记录。切片索引使用三列 ZIP 记录及五列切片记录。索引为 Base64 编码的 AES-CBC，先按 API 返回的大小和 MD5 验证密文。包清单签名由原版 Windows 原生模块处理。自动版本发现、预下载差异比较与合并、旧文件清理仍待实现。
 
 ## Proton
 
