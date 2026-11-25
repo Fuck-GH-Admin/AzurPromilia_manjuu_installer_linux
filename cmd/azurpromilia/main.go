@@ -397,6 +397,19 @@ func merge(root string, m Manifest, out string) error {
 	if verify(out, *m.Archive) {
 		return nil
 	}
+	var sliceBytes int64
+	for _, entry := range m.Files {
+		if entry.Size < 0 || entry.Size >= maxInt64 || entry.Size > maxInt64-sliceBytes {
+			return fmt.Errorf("invalid or overflowing slice size at %s", entry.Name)
+		}
+		sliceBytes += entry.Size
+		if sliceBytes > m.Archive.Size {
+			return fmt.Errorf("slice sizes exceed declared ZIP size: %d > %d", sliceBytes, m.Archive.Size)
+		}
+	}
+	if sliceBytes != m.Archive.Size {
+		return fmt.Errorf("slice sizes do not match declared ZIP size: %d != %d", sliceBytes, m.Archive.Size)
+	}
 	if err := os.MkdirAll(filepath.Dir(out), 0755); err != nil {
 		return err
 	}
@@ -423,8 +436,11 @@ func merge(root string, m Manifest, out string) error {
 		if err != nil {
 			return err
 		}
-		_, copyErr := io.Copy(f, r)
+		copied, copyErr := io.Copy(f, io.LimitReader(r, entry.Size+1))
 		closeErr := r.Close()
+		if copyErr == nil && copied != entry.Size {
+			copyErr = fmt.Errorf("slice size mismatch for %s: got %d, want %d", entry.Name, copied, entry.Size)
+		}
 		if copyErr != nil || closeErr != nil {
 			return errors.Join(copyErr, closeErr)
 		}
