@@ -89,6 +89,12 @@ func preflightFiles(root string, files []Entry) (map[string]bool, int64, error) 
 		} else if statErr != nil && !os.IsNotExist(statErr) {
 			return nil, 0, fmt.Errorf("inspect download destination %s: %w", entry.Name, statErr)
 		}
+		part := p + ".part"
+		if st, statErr := os.Lstat(part); statErr == nil && !st.Mode().IsRegular() {
+			return nil, 0, fmt.Errorf("partial download path exists but is not a regular file: %s", entry.Name)
+		} else if statErr != nil && !os.IsNotExist(statErr) {
+			return nil, 0, fmt.Errorf("inspect partial download %s: %w", entry.Name, statErr)
+		}
 		if verify(p, entry) {
 			valid[entry.Name] = true
 			continue
