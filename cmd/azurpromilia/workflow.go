@@ -592,6 +592,15 @@ func requiredExtractionBytes(root string, entries []ExtractedEntry) (int64, erro
 		if entry.Size < 0 || entry.Size > maxInt64-required {
 			return 0, fmt.Errorf("invalid or overflowing ZIP extraction size at %s", entry.Name)
 		}
+		p, err := safe(root, entry.Name)
+		if err != nil {
+			return 0, err
+		}
+		if st, statErr := os.Lstat(p); statErr == nil && !st.Mode().IsRegular() {
+			return 0, fmt.Errorf("ZIP extraction target exists but is not a regular file: %s", entry.Name)
+		} else if statErr != nil && !os.IsNotExist(statErr) {
+			return 0, fmt.Errorf("inspect ZIP extraction target %s: %w", entry.Name, statErr)
+		}
 		if extractedEntryValid(root, entry) {
 			continue
 		}
