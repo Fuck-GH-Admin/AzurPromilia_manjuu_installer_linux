@@ -61,7 +61,8 @@ func runWorkflow(command string, args []string) error {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
-	state := filepath.Join(abs, ".azurpromilia")
+	state, err := safe(abs, ".azurpromilia")
+	if err != nil { return err }
 	if err = os.MkdirAll(state, 0700); err != nil {
 		return err
 	}
@@ -242,7 +243,8 @@ func fetchManifest(ctx context.Context, root, state, installer string, r Release
 		return m, nil, errors.New("invalid release version")
 	}
 	cdn := packageCDNs(r, *pkg)
-	indexRoot := filepath.Join(state, "index")
+	indexRoot, err := safe(root, filepath.Join(".azurpromilia", "index"))
+	if err != nil { return m, nil, err }
 	entry := Entry{Name: version + "-" + fmt.Sprint(typ), Remote: pkg.URL, MD5: pkg.MD5, Size: pkg.Size}
 	var network atomic.Int64
 	if err = download(ctx, indexRoot, entry, cdn, &network); err != nil {
@@ -334,6 +336,7 @@ func saveVersion(root, state string, m Manifest) error {
 
 func saveManifest(state string, m Manifest) error {
 	dir := filepath.Join(state, "manifests")
+	if st, err := os.Lstat(dir); err == nil && st.Mode()&os.ModeSymlink != 0 { return errors.New("manifest directory is a symlink") }
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
@@ -616,11 +619,13 @@ func installRelease(ctx context.Context, root, state, installer string, response
 		return saveVersion(root, state, m)
 	}
 
-	slices := filepath.Join(state, "slices", m.Version)
+	slices, err := safe(root, filepath.Join(".azurpromilia", "slices", m.Version))
+	if err != nil { return err }
 	if err = runFiles(ctx, slices, m, workers, false); err != nil {
 		return err
 	}
-	archive := filepath.Join(state, "archives", m.Version+".zip")
+	archive, err := safe(root, filepath.Join(".azurpromilia", "archives", m.Version+".zip"))
+	if err != nil { return err }
 	if err = merge(slices, m, archive); err != nil {
 		return err
 	}
