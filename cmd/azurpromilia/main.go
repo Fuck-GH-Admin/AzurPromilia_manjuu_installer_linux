@@ -452,7 +452,11 @@ func extractZIP(path, root string) error {
 			return err
 		}
 		if f.FileInfo().IsDir() {
-			if err = os.MkdirAll(p, f.Mode().Perm()); err != nil {
+			dirMode := f.Mode().Perm()
+			if dirMode == 0 {
+				dirMode = 0755
+			}
+			if err = os.MkdirAll(p, dirMode); err != nil {
 				return err
 			}
 			continue
@@ -487,8 +491,8 @@ func extractZIP(path, root string) error {
 		if copyErr == nil && copied != entry.Size {
 			copyErr = fmt.Errorf("ZIP entry size mismatch for %s: got %d, want %d", name, copied, entry.Size)
 		}
-		if copyErr == nil && readCloseErr != nil {
-			copyErr = readCloseErr
+		if readCloseErr != nil {
+			copyErr = errors.Join(copyErr, readCloseErr)
 		}
 		if copyErr == nil {
 			copyErr = tmp.Sync()
