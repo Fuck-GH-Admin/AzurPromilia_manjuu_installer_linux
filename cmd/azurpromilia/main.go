@@ -29,11 +29,55 @@ import (
  "time"
 )
 
-type Package struct { Type int `json:"packageType"`; URL string `json:"downloadUrl"`; MD5 string `json:"fileMd5"`; Size int64 `json:"fileSize"`; CDN []string `json:"cdnBaseUrls"` }
-type Release struct { Version json.RawMessage `json:"versionCode"`; Name string `json:"versionName"`; CDN []string `json:"domainList"`; Packages []Package `json:"gamePackageList"` }
-type Response struct { Code int `json:"code"`; Data struct { Released Release `json:"released"`; Preload Release `json:"preload"` } `json:"data"` }
+type Package struct {
+ Type int `json:"packageType"`
+ URL string `json:"downloadUrl"`
+ MD5 string `json:"fileMd5"`
+ Size int64 `json:"fileSize"`
+ CDN []string `json:"cdnBaseUrls"`
+}
+type ExcludedFile struct {
+ FilePath string `json:"filePath"`
+ FileType int `json:"fileType"`
+}
+type Release struct {
+ Version json.RawMessage `json:"versionCode"`
+ Name string `json:"versionName"`
+ GameName string `json:"gameName"`
+ GameFolderName string `json:"gameFolderName"`
+ LaunchEntry string `json:"launchEntry"`
+ PackageSize int64 `json:"packageSize"`
+ GameExcludedFileList []ExcludedFile `json:"gameExcludedFileList"`
+ CDN []string `json:"domainList"`
+ Packages []Package `json:"gamePackageList"`
+}
+type Response struct {
+ Code int `json:"code"`
+ Data struct {
+  DownloadMode int `json:"downloadMode"`
+  Released Release `json:"released"`
+  Preload Release `json:"preload"`
+  GameConfig json.RawMessage `json:"gameConfig"`
+  LaunchInfo json.RawMessage `json:"launchInfo"`
+ } `json:"data"`
+}
 type Entry struct { Name, Remote, MD5 string; Size int64 }
-type Manifest struct { Version string; Files []Entry; Archive *Entry; CDN []string; Directories []string }
+type ExtractedEntry struct {
+ Name string `json:"name"`
+ Size int64 `json:"size"`
+ CRC32 uint32 `json:"crc32"`
+}
+type Manifest struct {
+ Version string
+ VersionName string
+ PackageType int
+ Files []Entry
+ Archive *Entry
+ CDN []string
+ Directories []string
+ Excluded []ExcludedFile
+ Extracted []ExtractedEntry
+}
 var client = &http.Client{Transport:&http.Transport{Proxy:http.ProxyFromEnvironment,MaxIdleConns:32,MaxIdleConnsPerHost:16,ResponseHeaderTimeout:30*time.Second,IdleConnTimeout:30*time.Second,DisableCompression:true}}
 var output sync.Mutex
 func logf(f string,a ...any){output.Lock();defer output.Unlock();fmt.Fprintf(os.Stderr,f+"\n",a...)}
@@ -201,19 +245,19 @@ func verifyExtracted(archive,root string)error{
 func main(){if err:=run();err!=nil{logf("ERROR: %v",err);os.Exit(1)}}
 func run()error{
  if len(os.Args)<2{return errors.New("usage: azurpromilia download|verify --help")}
- cmd:=os.Args[1];if cmd=="help"||cmd=="--help"{fmt.Println("azurpromilia download --packageconfig response.json --installer original.exe --root GAME [--target released|preload] [--workers 4] [--slice]\nazurpromilia verify --root GAME");return nil}
- fs:=flag.NewFlagSet(cmd,flag.ContinueOnError);root:=fs.String("root","AzurPromilia","game directory");pkgPath:=fs.String("packageconfig","","official packageconfig response JSON");exe:=fs.String("installer","","original installer EXE");target:=fs.String("target","released","released or preload");workers:=fs.Int("workers",4,"parallel downloads");slice:=fs.Bool("slice",false,"select slice package");noExtract:=fs.Bool("no-extract",false,"do not extract ZIP");probe:=fs.Bool("probe",false,"only fetch official index and one smallest nonempty resource; do not install");versionFlag:=fs.String("version","","preload version for verification");if e:=fs.Parse(os.Args[2:]);e!=nil{if e==flag.ErrHelp{return nil};return e}
+ cmd:=os.Args[1];if cmd=="help"||cmd=="--help"{fmt.Println("azurpromilia install|update|repair|preload|info|download|verify --help");return nil};if cmd=="install"||cmd=="update"||cmd=="repair"||cmd=="preload"||cmd=="info"{return runWorkflow(cmd,os.Args[2:])}
+ fs:=flag.NewFlagSet(cmd,flag.ContinueOnError);root:=fs.String("root","AzurPromilia","game directory");pkgPath:=fs.String("packageconfig","","official packageconfig response JSON");exe:=fs.String("installer","","original installer EXE");target:=fs.String("target","released","released or preload");workers:=fs.Int("workers",4,"parallel downloads");slice:=fs.Bool("slice",false,"select slice package");noExtract:=fs.Bool("no-extract",false,"do not extract ZIP");probe:=fs.Bool("probe",false,"only fetch official index and one smallest nonempty resource; do not install");versionFlag:=fs.String("version","","preload version for verification");mode:=fs.String("mode","auto","auto, slice or reality");if e:=fs.Parse(os.Args[2:]);e!=nil{if e==flag.ErrHelp{return nil};return e}
  if *workers<1||*workers>32{return errors.New("workers must be 1..32")}
  abs,e:=filepath.Abs(*root);if e!=nil{return e};if e=os.MkdirAll(abs,0755);e!=nil{return e};abs,e=filepath.EvalSymlinks(abs);if e!=nil{return e}
  ctx,cancel:=signal.NotifyContext(context.Background(),os.Interrupt);defer cancel()
  state:=filepath.Join(abs,".azurpromilia");manifestPath:=filepath.Join(state,"manifest.json");var m Manifest
- if cmd=="verify"{if *target=="preload"{if *versionFlag==""||!regexp.MustCompile("^[a-zA-Z0-9_.-]+$").MatchString(*versionFlag){return errors.New("verify preload requires --version")};manifestPath=filepath.Join(state,"preload-"+*versionFlag+".json")}else if *target!="released"{return errors.New("invalid target")};b,e:=os.ReadFile(manifestPath);if e!=nil{return e};if e=json.Unmarshal(b,&m);e!=nil{return e};work:=abs;if *target=="preload"{work=filepath.Join(abs,"_pre_download",m.Version)};if m.Archive!=nil{archive:=filepath.Join(state,"archives",m.Version+".zip");if !verify(archive,*m.Archive){return errors.New("merged archive missing or invalid")};if !*noExtract{if e=verifyExtracted(archive,work);e!=nil{return e}};work=filepath.Join(state,"slices",m.Version)};return runFiles(ctx,work,m,*workers,true)}
+ if cmd=="verify"{if *target=="preload"{if *versionFlag==""||!regexp.MustCompile("^[a-zA-Z0-9_.-]+$").MatchString(*versionFlag){return errors.New("verify preload requires --version")};manifestPath=filepath.Join(state,"preload-"+*versionFlag+".json")}else if *target!="released"{return errors.New("invalid target")};b,e:=os.ReadFile(manifestPath);if e!=nil{return e};if e=json.Unmarshal(b,&m);e!=nil{return e};work:=abs;if *target=="preload"{work=filepath.Join(abs,"_pre_download",m.Version)};if len(m.Extracted)>0{if e=verifyExtractedEntries(work,m.Extracted);e!=nil{return e};if len(m.Files)==0{return nil}};if m.Archive!=nil{archive:=filepath.Join(state,"archives",m.Version+".zip");if _,statErr:=os.Stat(archive);statErr==nil{if !verify(archive,*m.Archive){return errors.New("merged archive missing or invalid")};if !*noExtract{if e=verifyExtracted(archive,work);e!=nil{return e}}}else if len(m.Extracted)==0{return errors.New("merged archive missing or invalid")};work=filepath.Join(state,"slices",m.Version)};return runFiles(ctx,work,m,*workers,true)}
  if cmd!="download"{return errors.New("unknown command")};if *pkgPath==""||*exe==""{return errors.New("--packageconfig and --installer required")}
  key,iv,e:=installerKeys(*exe);if e!=nil{return e};raw,e:=os.ReadFile(*pkgPath);if e!=nil{return e}
  var response Response;if e=json.Unmarshal(raw,&response);e!=nil{return e};if response.Code!=0{return fmt.Errorf("official API error %d",response.Code)}
  release:=response.Data.Released;if *target=="preload"{release=response.Data.Preload}else if *target!="released"{return errors.New("invalid target")}
  version:=strings.Trim(string(release.Version),"\"");if version==""||version=="null"||!regexp.MustCompile("^[a-zA-Z0-9_.-]+$").MatchString(version)||version=="."||version==".."{return errors.New("invalid/missing version")}
- var pkg *Package;typ:=2;if *slice{typ=1}
+ typ,e:=selectPackageType(response.Data.DownloadMode,*mode,release.Packages);if e!=nil{return e};if *slice{typ=1};if *target=="preload"{typ=2};var pkg *Package
  for _,p:=range release.Packages{if p.Type==typ{v:=p;pkg=&v;break}}
  if pkg==nil{return fmt.Errorf("package type %d unavailable; inspect official response",typ)}
  cdn:=pkg.CDN;if len(release.CDN)>0{cdn=release.CDN}
