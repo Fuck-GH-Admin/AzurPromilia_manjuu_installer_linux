@@ -387,6 +387,9 @@ func merge(root string, m Manifest, out string) error {
 	if m.Archive == nil {
 		return errors.New("missing ZIP archive metadata")
 	}
+	if m.Archive.Size < 0 || m.Archive.Size >= maxInt64 {
+		return errors.New("invalid or unrepresentable ZIP archive size")
+	}
 	for _, candidate := range []string{out, out + ".part"} {
 		if st, statErr := os.Lstat(candidate); statErr == nil && !st.Mode().IsRegular() {
 			return fmt.Errorf("merge target is not a regular file: %s", candidate)
