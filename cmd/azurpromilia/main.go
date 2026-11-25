@@ -90,6 +90,13 @@ func safe(root,name string)(string,error){
  for x:=p;x!=root&&x!=filepath.Dir(x);x=filepath.Dir(x){if st,e:=os.Lstat(x);e==nil&&st.Mode()&os.ModeSymlink!=0{return "",fmt.Errorf("symlink refused: %s",x)}}
  return p,nil
 }
+func reservedGamePath(name string) bool {
+ name = strings.ToLower(strings.Trim(strings.ReplaceAll(name, "\\", "/"), "/"))
+ for _, prefix := range []string{".azurpromilia", "_index", "_pre_download"} {
+  if name == prefix || strings.HasPrefix(name, prefix+"/") { return true }
+ }
+ return false
+}
 func verify(p string,e Entry)bool{
  f,err:=os.Open(p);if err!=nil{return false};defer f.Close()
  st,err:=f.Stat();if err!=nil||!st.Mode().IsRegular()||st.Size()!=e.Size{return false}
@@ -185,13 +192,13 @@ func parseIndex(raw []byte,slice bool)(Manifest,error){
    continue
   }
   if slice&&len(a)==3{n,e:=strconv.ParseInt(a[1],10,64);if e!=nil||n<0||!validMD5(a[2])||m.Archive!=nil{return m,errors.New("invalid ZIP record")};m.Archive=&Entry{Name:"game.zip",Size:n,MD5:a[2]};continue}
-  if !slice&&len(a)==4{m.Directories=append(m.Directories,strings.ReplaceAll(a[3],"\\","/"));continue}
+  if !slice&&len(a)==4{dir:=strings.ReplaceAll(a[3],"\\","/");if reservedGamePath(dir){return m,fmt.Errorf("reserved directory path %q",dir)};m.Directories=append(m.Directories,dir);continue}
   if len(a)!=5{return m,fmt.Errorf("unknown index row (%d columns)",len(a))}
   name,size,hash:=a[3],a[1],a[2];if slice{name,size,hash=a[3],a[2],a[3]}
   name=strings.ReplaceAll(name,"\\","/");n,e:=strconv.ParseInt(size,10,64)
   if e!=nil||n<0||!validMD5(hash)||seen[strings.ToLower(name)]{return m,fmt.Errorf("invalid or duplicate record %q",name)}
   if _,e=safe("/tmp",name);e!=nil{return m,e}
-  if strings.HasPrefix(name,".azurpromilia/")||strings.HasSuffix(name,".part"){return m,errors.New("reserved file path")}
+  if reservedGamePath(name)||strings.HasSuffix(strings.ToLower(name),".part"){return m,errors.New("reserved file path")}
   seen[strings.ToLower(name)]=true;m.Files=append(m.Files,Entry{name,a[4],hash,n})
  }
  if err:=s.Err();err!=nil{return m,err}
@@ -226,7 +233,7 @@ func extractZIP(path,root string)error{
  z,e:=zip.OpenReader(path);if e!=nil{return e};defer z.Close()
  for _,f:=range z.File{
   name:=strings.TrimSuffix(strings.ReplaceAll(f.Name,"\\","/"),"/")
-  lower:=strings.ToLower(name);if strings.HasPrefix(lower,".azurpromilia")||lower=="_index"||strings.HasPrefix(lower,"_index/")||lower=="_pre_download"||strings.HasPrefix(lower,"_pre_download/")||f.Mode()&os.ModeSymlink!=0{return fmt.Errorf("unsafe ZIP entry %s",name)}
+  if reservedGamePath(name)||f.Mode()&os.ModeSymlink!=0{return fmt.Errorf("unsafe ZIP entry %s",name)}
   p,e:=safe(root,name);if e!=nil{return e}
   if f.FileInfo().IsDir(){if e=os.MkdirAll(p,0755);e!=nil{return e};continue}
   if e=os.MkdirAll(filepath.Dir(p),0755);e!=nil{return e}
