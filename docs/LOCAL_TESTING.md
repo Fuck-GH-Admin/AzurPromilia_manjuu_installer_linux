@@ -92,7 +92,7 @@ direct ./azurpromilia download \
 
 如果失败，请记录从 `VERSION`、`RETRY`、`FAIL` 到最终 `ERROR` 的完整日志，以及 HTTP 状态码和响应错误。不要只截取最后一行。
 
-## 5. 第二轮：逐文件包完整下载
+## 5. 底层 `download` 命令：逐文件包下载（兼容入口）
 
 只有 `--probe` 成功后才建议开始：
 
@@ -110,11 +110,11 @@ direct ./azurpromilia download \
 ./azurpromilia verify --root "$HOME/Games/AzurPromilia-test"
 ```
 
-目前默认下载 `packageType=2`。CLI 还没有自动读取 `downloadMode` 来选择包类型；如果官方响应指示使用切片模式，请不要把默认逐文件模式的失败当成 CDN 故障。
+本节使用旧的底层 `download` 命令，默认选择 `packageType=2`。它不会按 `downloadMode` 自动选择包类型，也不会完成完整工作流的版本状态管理。正常首次安装请使用第 11 节的 `install` 命令；`install --mode auto` 才会按服务端 `downloadMode` 选择包类型。
 
 如需检查断点续传，可在下载一个较大的文件时按 Ctrl+C，然后原命令重新运行。观察是否发送 Range 请求并正确续传。若服务器忽略 Range 并返回 200，程序应从头覆盖 `.part`，不能把完整响应追加到旧分片。
 
-## 6. 第三轮：切片包（仅在服务器确实提供时）
+## 6. 底层 `download` 命令：切片包下载（兼容入口）
 
 ```bash
 direct ./azurpromilia download \
@@ -133,7 +133,7 @@ direct ./azurpromilia download \
 
 如果只想测试切片下载和 ZIP 合并、不解压，可使用 `--no-extract`；此时 `verify --no-extract` 只验证切片和合并后的 ZIP，不检查解压目录。
 
-## 7. 预下载模式：仅验证暂存，不应用
+## 7. 底层 `download --target preload`：原始暂存下载（兼容入口）
 
 ```bash
 direct ./azurpromilia download \
@@ -152,7 +152,7 @@ direct ./azurpromilia download \
   --version VERSION_CODE
 ```
 
-**不要手工把 `_pre_download` 目录覆盖进正式游戏目录。** 当前版本尚未实现原版的预下载差异比较、合并、回滚和正式更新流程；这里只能验证暂存下载是否正确。
+**不要手工把 `_pre_download` 目录覆盖进正式游戏目录。** 本节的底层 `download --target preload` 只负责按单份 packageconfig 下载暂存资源，不会比较 released/preload 差异。差异比较由新的 `preload` 命令完成；正式应用由 `update` 完成，且会重新按新版本索引验证 MD5。
 
 ## 8. 反馈时请提供什么
 
@@ -214,7 +214,7 @@ API 主站为 `api-grp.manjuu.com`，备用站为 `api-grp-l2.manjuu.com`。引�
 不传 `--packageconfig` 时，程序会自动调用 `tools/bootstrap.py`，把 packageconfig 缓存到游戏目录的 `.azurpromilia/packageconfig.json`。默认每次刷新，避免拿旧版本清单执行 update。
 
 ```bash
-./azurpromilia info \\
+./azurpromilia info \
   --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe"
 ```
 
@@ -223,9 +223,9 @@ Linux 需要 Python 3 和可运行原版 N-API 模块的 Wine。若二进制放�
 ### 首次安装：自动选择服务器模式
 
 ```bash
-./azurpromilia install \\
-  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \\
-  --root "$HOME/Games/AzurPromilia-test" \\
+./azurpromilia install \
+  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \
+  --root "$HOME/Games/AzurPromilia-test" \
   --workers 4
 ```
 
@@ -236,14 +236,14 @@ Linux 需要 Python 3 和可运行原版 N-API 模块的 Wine。若二进制放�
 先确认本机已安装版本，再运行：
 
 ```bash
-./azurpromilia preload \\
-  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \\
-  --root "$HOME/Games/AzurPromilia-test" \\
+./azurpromilia preload \
+  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \
+  --root "$HOME/Games/AzurPromilia-test" \
   --workers 4
 
-./azurpromilia verify \\
-  --root "$HOME/Games/AzurPromilia-test" \\
-  --target preload \\
+./azurpromilia verify \
+  --root "$HOME/Games/AzurPromilia-test" \
+  --target preload \
   --version PRELOAD_VERSION_CODE
 ```
 
@@ -252,9 +252,9 @@ preload 通过当前 released 与 preload 两份 packageType 2 索引按路径�
 版本正式切换后：
 
 ```bash
-./azurpromilia update \\
-  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \\
-  --root "$HOME/Games/AzurPromilia-test" \\
+./azurpromilia update \
+  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \
+  --root "$HOME/Games/AzurPromilia-test" \
   --workers 4
 
 ./azurpromilia verify --root "$HOME/Games/AzurPromilia-test"
@@ -267,9 +267,9 @@ update 会对预下载缓存重新计算 MD5，复用匹配新版本索引的文
 ### 修复
 
 ```bash
-./azurpromilia repair \\
-  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \\
-  --root "$HOME/Games/AzurPromilia-test" \\
+./azurpromilia repair \
+  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \
+  --root "$HOME/Games/AzurPromilia-test" \
   --workers 4
 ```
 
@@ -285,4 +285,25 @@ repair 只对当前服务端版本逐文件检查大小和 MD5，不清理旧版
 6. 对一个可丢弃的测试目录运行 repair，确认损坏文件会重新下载。
 7. 全部完成后再考虑正式游戏目录。
 
-目前尚未测试整包下载、磁盘空间预检查、全局回滚、其他渠道、登录态和游戏启动。Proton 仍由用户自行配置；`info` 只显示匿名 API 能提供的 launch metadata。
+目前尚未测试整包下载、真实版本更新、其他渠道、登录态和游戏启动。已加入磁盘空间预检查、ZIP 解压保护和下载失败快速停止，具体行为见第 12 节；仍需通过本地验收。Proton 仍由用户自行配置；`info` 只显示匿名 API 能提供的 launch metadata。
+
+
+## 12. 第一阶段：下载可靠性改动
+
+当前分支新增以下保护，GitHub Actions 验证完成后再把对应测试标记为通过：
+
+- `install`、`repair`、`preload`、`update` 和底层 `download` 在正式派发资源任务前，会校验已有文件并计算缺失/损坏文件的预计下载字节数。
+- 如果文件系统可用空间不足，会在下载开始前报出所需空间和当前可用空间。估算会按完整文件大小计算损坏资源，属于保守估算；不会把已有 `.part` 当作可信的完整资源。
+- SLICE 模式在合并前检查最终 ZIP 所需空间；解压前再根据 ZIP 中央目录统计尚未存在或 CRC32/大小不匹配的文件所需空间。
+- ZIP 会拒绝重复路径、文件/目录路径冲突、路径穿越、符号链接和特殊文件；累计未压缩大小时检查溢出，并将每个条目的实际解压流限制在声明大小加 1 字节以内。
+- 下载中的单个文件在既定重试全部失败后，会停止继续派发新文件，并取消其他正在执行的下载请求。`verify` 不会因此提前停止，会继续扫描清单以汇总问题。
+- 磁盘空间检查基于文件系统当时的可用块数，不是预留空间；其他程序同时写盘或用户配额仍可能导致后续写入失败。
+
+自动化回归：
+
+```bash
+go test -race ./...
+go vet ./...
+```
+
+这些本地测试只验证下载器自身的调度、空间估算和 ZIP 处理逻辑，不代表官方 CDN 的全量下载已经通过。
