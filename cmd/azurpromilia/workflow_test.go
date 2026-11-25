@@ -285,3 +285,22 @@ func TestRequiredExtractionBytesRejectsNonRegularTarget(t *testing.T) {
 		t.Fatal("directory accepted as a ZIP file target")
 	}
 }
+
+
+func TestMergeRejectsSliceTotalMismatchBeforeWriting(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "slice-1"), []byte("abc"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	manifest := Manifest{
+		Files: []Entry{{Name: "slice-1", Size: 3, MD5: md5Of([]byte("abc"))}},
+		Archive: &Entry{Name: "game.zip", Size: 4, MD5: md5Of([]byte("abcd"))},
+	}
+	out := filepath.Join(root, "archive", "game.zip")
+	if err := merge(root, manifest, out); err == nil {
+		t.Fatal("merge accepted slice sizes that do not match the declared ZIP size")
+	}
+	if _, err := os.Stat(out + ".part"); !os.IsNotExist(err) {
+		t.Fatalf("merge created a partial archive before rejecting size mismatch: %v", err)
+	}
+}
