@@ -290,7 +290,7 @@ repair 只对当前服务端版本逐文件检查大小和 MD5，不清理旧版
 
 ## 12. 第一阶段：下载可靠性改动
 
-当前分支新增以下保护。GitHub Actions Run #111（`45619034089`）已通过 `go test -race ./...`、`go vet ./...`、Python/Node 检查和 Linux amd64/arm64 构建：
+当前分支新增以下保护。GitHub Actions Run #139（`45620110972`）已通过 `go test -race ./...`、`go vet ./...`、Python/Node 检查、Linux amd64/arm64 构建和 Artifact 上传：
 
 - `install`、`repair`、`preload`、`update` 和底层 `download` 在正式派发资源任务前，会校验已有文件并计算缺失/损坏文件的预计下载字节数。
 - 如果文件系统可用空间不足，会在下载开始前报出所需空间和当前可用空间。估算会按完整文件大小计算缺失/损坏资源；只有 `.part` 本身完整通过大小和 MD5 校验时才会直接复用，普通未完成分片仍按完整文件大小保守估算。
