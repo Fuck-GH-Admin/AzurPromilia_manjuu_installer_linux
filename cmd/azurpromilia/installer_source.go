@@ -150,8 +150,12 @@ func fetchOfficialInstallerURL(ctx context.Context, client *http.Client) (string
 	if err != nil {
 		return "", err
 	}
+	return parseOfficialInstallerURL(body)
+}
+
+func parseOfficialInstallerURL(body []byte) (string, error) {
 	var decoded officialDownloadInfoResponse
-	if err = json.Unmarshal(body, &decoded); err != nil {
+	if err := json.Unmarshal(body, &decoded); err != nil {
 		return "", fmt.Errorf("decode official installer discovery response: %w", err)
 	}
 	if decoded.Code != 0 {
@@ -245,7 +249,7 @@ func validateManualInstaller(path string) (string, error) {
 	return abs, nil
 }
 
-func downloadInstallerFile(ctx context.Context, client *http.Client, rawURL, target string, expectedSize int64, expectedSHA string) (installerCacheMetadata, error) {
+func downloadInstallerFile(ctx context.Context, client *http.Client, rawURL, target string, expectedSize int64, expectedSHA string, validate func(string) error) (installerCacheMetadata, error) {
 	resolved, err := validateInstallerURL(rawURL)
 	if err != nil {
 		return installerCacheMetadata{}, err
@@ -331,8 +335,10 @@ func downloadInstallerFile(ctx context.Context, client *http.Client, rawURL, tar
 	if expectedSHA != "" && !strings.EqualFold(hash, expectedSHA) {
 		return installerCacheMetadata{}, fmt.Errorf("official installer SHA-256 %s does not match expected %s", hash, expectedSHA)
 	}
-	if _, _, err = installerKeys(tmp); err != nil {
-		return installerCacheMetadata{}, fmt.Errorf("downloaded official installer is not compatible with this downloader: %w", err)
+	if validate != nil {
+		if err = validate(tmp); err != nil {
+			return installerCacheMetadata{}, fmt.Errorf("downloaded official installer is not compatible with this downloader: %w", err)
+		}
 	}
 	if err = os.Rename(tmp, target); err != nil {
 		return installerCacheMetadata{}, err
@@ -346,6 +352,11 @@ func downloadInstallerFile(ctx context.Context, client *http.Client, rawURL, tar
 		Source:    "official",
 		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
 	}, nil
+}
+
+func validateInstallerStructure(path string) error {
+	_, _, err := installerKeys(path)
+	return err
 }
 
 func saveInstallerCacheMetadata(path string, meta installerCacheMetadata) error {
@@ -400,7 +411,7 @@ func resolveInstaller(ctx context.Context, requested, state string) (string, err
 			version = fallback.Version
 		}
 		logf("INSTALLER downloading current official SC000 launcher")
-		meta, downloadErr := downloadInstallerFile(ctx, client, liveURL, cachePath, expectedSize, expectedSHA)
+		meta, downloadErr := downloadInstallerFile(ctx, client, liveURL, cachePath, expectedSize, expectedSHA, validateInstallerStructure)
 		if downloadErr == nil {
 			meta.Version = version
 			meta.Source = "official-live"
@@ -420,7 +431,7 @@ func resolveInstaller(ctx context.Context, requested, state string) (string, err
 	}
 
 	logf("INSTALLER using built-in verified fallback %s", fallback.Version)
-	meta, fallbackErr := downloadInstallerFile(ctx, client, fallback.URL, cachePath, fallback.Size, fallback.SHA256)
+	meta, fallbackErr := downloadInstallerFile(ctx, client, fallback.URL, cachePath, fallback.Size, fallback.SHA256, validateInstallerStructure)
 	if fallbackErr == nil {
 		meta.Version = fallback.Version
 		meta.Source = "builtin-fallback"
