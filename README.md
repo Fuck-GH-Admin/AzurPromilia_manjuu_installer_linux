@@ -38,7 +38,19 @@
 
 Linux 运行时需要 Python 3 和 64 位 Wine，用于调用官方安装器携带的原版 Electron/N-API 组件获取匿名包清单。使用预编译 Release 时不需要安装 Go 或 Node.js。
 
-**注意：目前尚未发布第一个 GitHub Release。** Release 工作流已经准备好；维护者发布版本标签或从 Actions 手动触发后，会生成正式的下载包。在此之前，可以从 [Actions 构建记录](https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux/actions/workflows/build.yml) 下载最新成功运行的构建产物：下载 artifact azurpromilia-linux，解压后使用其中的 azurpromilia-linux-amd64.tar.gz 和 PACKAGE_SHA256SUMS。Actions 构建产物有保留期限；长期下载请等待 Releases。
+**注意：目前尚未发布第一个 GitHub Release。** Release 工作流已经准备好；维护者发布版本标签或从 Actions 手动触发后，会生成正式的下载包。在此之前，可以从 [Actions 构建记录](https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux/actions/workflows/build.yml) 下载最新成功运行的构建产物：
+
+1. 打开最新一次成功的 Linux build run，在 Artifacts 中下载 azurpromilia-linux。
+2. 解压 Actions artifact，然后在其中运行：
+
+~~~bash
+sha256sum -c PACKAGE_SHA256SUMS
+tar -xzf azurpromilia-linux-amd64.tar.gz
+~~~
+
+3. 进入解压出的目录，按 [玩家安装指南](docs/PLAYER_GUIDE.md) 操作。
+
+Actions 构建产物有保留期限；长期下载请等待 Releases。
 
 ## 项目边界
 
