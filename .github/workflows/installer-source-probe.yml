@@ -15,6 +15,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+          cache: false
+      - name: Unit tests
+        run: go test ./...
       - name: Inspect official website download metadata
         shell: bash
         run: |
@@ -150,6 +156,37 @@ jobs:
           pathlib.Path("probe/report.txt").write_text("\n".join(report) + "\n", encoding="utf-8")
           print("\n".join(report))
           PY
+      - name: Verify current official installer is compatible with automatic resolver
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="$(grep '^OFFICIAL_LAUNCHER_URL=' probe/report.txt | tail -1 | cut -d= -f2-)"
+          hash="$(grep '^INSTALLER_SHA256=' probe/report.txt | tail -1 | cut -d= -f2-)"
+          size="$(grep '^INSTALLER_BYTES=' probe/report.txt | tail -1 | cut -d= -f2-)"
+          cache="$HOME/.cache/azurpromilia/SC000"
+          mkdir -p "$cache"
+          cp probe/current-installer.exe "$cache/official-installer.exe"
+          python3 - "$cache/official-installer.json" "$url" "$hash" "$size" <<'PY'
+          import json, pathlib, sys
+          pathlib.Path(sys.argv[1]).write_text(json.dumps({
+              "url": sys.argv[2],
+              "sha256": sys.argv[3],
+              "size": int(sys.argv[4]),
+              "source": "integration-seed"
+          }), encoding="utf-8")
+          PY
+          go build -o probe/azurpromilia ./cmd/azurpromilia
+          printf '{"code":1,"msg":"expected integration stop"}
+' > probe/dummy-packageconfig.json
+          set +e
+          output="$(./probe/azurpromilia download --packageconfig probe/dummy-packageconfig.json --root probe/game 2>&1)"
+          rc=$?
+          set -e
+          printf '%s
+' "$output"
+          test "$rc" -ne 0
+          grep -q 'INSTALLER cache hit' <<<"$output"
+          grep -q 'official API error 1' <<<"$output"
       - uses: actions/upload-artifact@v4
         with:
           name: sc000-installer-source-probe
