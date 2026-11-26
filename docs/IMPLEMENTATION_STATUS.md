@@ -37,6 +37,7 @@
 | 项目 | 当前实现 |
 |---|---|
 | Linux CLI | Go 单文件程序，无 GUI |
+| 官方安装器获取 | 默认调用官网生产下载接口发现当前 SC000 PC 启动器，下载并缓存；接口不可用时使用内置已验证官方版本兜底；`--installer` 可手动覆盖 |
 | 安装器索引参数读取 | 从原始 EXE 内部 ASAR 提取 AES 参数 |
 | 索引密文下载 | 使用包信息中的 URL、大小和 MD5 |
 | 索引解密 | Base64 + AES-CBC + PKCS#7 去填充 |
@@ -68,6 +69,7 @@
 - `preload` 同时获取 released 和 preload 的 packageType 2 索引，只暂存路径或 MD5 不同的资源。
 - `update` 会优先复用通过新版本 MD5 校验的预下载文件，再执行完整文件校验；成功后才清理旧 manifest 中已废弃的文件。
 - `info` 显示当前版本、downloadMode、包类型和可用的游戏/启动元数据。
+- 未显式传 `--installer` 时，工作流先通过官网 `/activity/web/download/info?gameId=35` 发现当前 SC000 PC 启动器并缓存；官网发现失败时复用有效缓存，再退回内置已验证版本。`--installer` 仍可手动覆盖。
 - 新工作流未指定 `--packageconfig` 时，会自动运行 bootstrap；默认每次刷新匿名元数据。显式指定 packageconfig 时使用本地文件。
 - `download --probe` 仍是小文件探测命令，不执行完整安装。
 - `verify` 根据当前 manifest 校验逐文件资源；切片安装若无法取得 type-2 基线，则使用 ZIP 解压后的 CRC32/大小清单校验。
@@ -149,6 +151,7 @@ GitHub Actions 验证记录：
 
 - [x] Go 单元测试通过，amd64 Linux 构建成功。
 - [x] 本机可从提供的原始 EXE 提取 AES 参数，并解密真实索引。
+- [x] 官网下载信息接口真实返回当前 SC000 `nativeLauncherDownloadUrl`；自动 resolver 能复用缓存并通过现有安装器结构解析。
 - [x] bootstrap 从官方 API 得到 `code=0` 且包含预期 `released` package 的响应。
 - [x] 两种 `--probe` 均通过官方索引 MD5、解密和解析。
 - [x] 两种 `--probe` 均下载真实资源并完成文件大小、MD5 校验。
@@ -190,3 +193,43 @@ GitHub Actions 验证记录：
 - Build workflow 现会在 Actions artifact 中提供 `azurpromilia-linux-amd64.tar.gz` 和 `PACKAGE_SHA256SUMS`，压缩包内包含 CLI、tools、docs 和 README。
 - 首个完整玩家包构建（Actions run ID：`45788177480`，workflow run #241，head `0e596fa`）通过 Go race tests、Go vet、Python/Node 检查、amd64/arm64 构建及 Artifact 上传。Artifact ID：`15101446387`，有效期至 2027-02-24；后续构建以 Actions 页面最新成功结果为准。
 - 仓库已采用 PolyForm Noncommercial License 1.0.0：允许非商业使用、修改、fork 和再分发，禁止商业用途；Actions / Release 玩家包同时携带 LICENSE。
+
+
+## 8. 官方 SC000 启动器自动获取（2026-11-26）
+
+为降低普通玩家门槛，`--installer` 已从必填参数改为可选高级覆盖项。
+
+官网生产前端当前使用：
+
+- API：`https://api-grp.manjuu.com/activity/web/download/info?gameId=35`
+- `grp-app-id=350010`
+- `grp-channel-code=C000`
+- `grp-sub-channel-code=SC000`
+- GET 签名：`md5(timestamp + "gameId=35")`
+- 返回字段：`data.nativeLauncherDownloadUrl`
+
+Actions 真实请求得到 HTTP 200 / `code=0`，当前下发：
+
+- 启动器：`AzurPromilia_manjuu_installer_1.0.2.2_35_SC000_202611242140.exe`
+- 大小：`190835304` bytes
+- SHA-256：`0a1d1b97947838146c7b8f3f0d27dbba79e60372d043f60cd5401f2979531282`
+
+该版本同时作为当前内置兜底元数据。默认解析顺序：
+
+1. 官网实时发现当前 URL；
+2. 同 URL 的本地缓存通过 SHA-256 和安装器结构校验时直接复用；
+3. URL 更新时下载新官方安装器，结构校验成功后原子替换缓存并记录新的 SHA-256；
+4. 官网发现/当前下载失败时复用既有有效缓存；
+5. 没有有效缓存时下载内置的最后一个已验证官方版本，并强制检查内置大小和 SHA-256；
+6. 以上全部失败时才提示用户使用 `--installer /path/to/SC000.exe`。
+
+缓存使用系统用户缓存目录，Linux 通常为 `~/.cache/azurpromilia/SC000`（或 `$XDG_CACHE_HOME/azurpromilia/SC000`）。自动下载的 EXE 不执行安装，只用于读取启动器参数和 metadata bootstrap。
+
+临时真实公网验证 Run `45798993184` 已通过：
+
+- Go 单元测试；
+- 官网真实下载信息 API；
+- 当前官方 `1.0.2.2` 完整下载与 SHA-256；
+- 将该文件作为缓存后，不传 `--installer` 的自动 resolver 成功命中缓存并通过现有 `installerKeys` 结构校验。
+
+临时官网探针仅用于确认这一行为，不进入 main。
