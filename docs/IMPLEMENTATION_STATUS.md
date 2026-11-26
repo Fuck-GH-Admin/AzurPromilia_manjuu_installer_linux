@@ -79,7 +79,7 @@
 
 ### P0：官方 API 客户端仍依赖原版 Windows N-API
 
-- 当前没有纯 Go 官方 API 签名实现。Linux 工作流调用用户原始安装器中的 Electron/N-API 模块，由 Wine 执行一次性 bootstrap。
+- packageconfig 仍没有纯 Go 签名实现。Linux 工作流使用自动获取并缓存的官方 SC000 启动器（或用户通过 `--installer` 指定的兼容安装器）中的 Electron/N-API 模块，由 Wine 执行一次性 bootstrap。
 - SC000 样本在 Wine 10.0 下实测通过匿名 packageconfig、config 和 pre/check。config 返回游戏目录名，pre/check 返回当前版本的启动入口。
 - 不支持账号登录、uid/utoken、token 刷新及需要登录的接口。
 - bootstrap 固定使用 SC000 和简化 client-info；其他渠道、Windows 原生环境、不同 Wine 版本仍待验证。
