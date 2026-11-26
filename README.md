@@ -4,7 +4,6 @@
 
 本项目提供 Linux 原生 CLI：从你自己取得的官方 SC000 Windows 安装器中读取必要参数，通过官方接口获取匿名包清单，再从官方 CDN 下载游戏资源。它不分发游戏文件，不处理账号登录，也不自动安装或配置 Steam / Proton。
 
-<text>
 
 ## 玩家从这里开始
 
@@ -32,7 +31,7 @@
 
 ## 快速开始
 
-1. 从 [Manjuu 官方渠道](https://azurpromilia.com/) 获取 SC000 Windows 安装器 EXE。
+1. 从 Manjuu 官方渠道获取 SC000 Windows 安装器 EXE。
 2. 从 [Releases](https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux/releases) 下载 Linux amd64 压缩包和 SHA256SUMS。
 3. 阅读 [玩家安装指南](docs/PLAYER_GUIDE.md)，按步骤校验压缩包、运行 info 并安装。
 4. 安装完成后运行 Verify；如需启动游戏，按 [Proton 手动配置指南](docs/PROTON_SETUP.md) 在 Steam 中配置。
