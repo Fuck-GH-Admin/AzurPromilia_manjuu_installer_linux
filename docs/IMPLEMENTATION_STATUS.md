@@ -178,3 +178,15 @@ GitHub Actions 验证记录：
 - 结论：**GitHub Actions 可以访问官方公网和下载大型官方安装器；当前阻塞不是 Actions 网络，而是测试安装器渠道/封装格式不一致。**
 
 这两次 Actions 没有完成 Manjuu/SC000 的真实 packageconfig + CDN 小资源验证，因此不能替代后续使用正确 SC000 安装器进行的实服测试。临时自动探针在取证后删除，避免每次 PR 更新都重复下载约 171.5 MiB 的日本安装器；原有手动 `.github/workflows/live-probe.yml` 保留。
+
+
+## 7. 面向玩家的 main 分支整理（2026-11-26）
+
+- PR #4 已以 Squash 方式合并到 main，合并提交：`5e7cc6f49770162080726daf2df22a27aefda782`。
+- 新增 `docs/PLAYER_GUIDE.md`，整理 Linux x86-64 依赖、官方 SC000 安装器准备、匿名元数据获取、安装、Verify、Repair、磁盘空间、隐私和未验收功能边界。
+- README 改为玩家入口；逆向分析、实现状态和本地测试文档保留为开发者资料。
+- Proton 仅提供手动配置教程和 Steam 启动选项示例；不自动安装 Proton、不创建 CompatData、不修改 Steam 或启动游戏。
+- 新增 Release workflow：推送 `vX.Y.Z` 标签，或在 Actions 手动输入版本标签，可构建 Linux amd64 压缩包并创建 GitHub Release。带连字符的版本标签自动标记为 prerelease。该 workflow 已提交，但尚未实际发布第一个 Release。
+- Build workflow 现会在 Actions artifact 中提供 `azurpromilia-linux-amd64.tar.gz` 和 `PACKAGE_SHA256SUMS`，压缩包内包含 CLI、tools、docs 和 README。
+- main 当前构建 Run #（`45788177480`，head `0e596fa`）通过 Go race tests、Go vet、Python/Node 检查、amd64/arm64 构建及 Artifact 上传。Artifact ID：`15101446387`，有效期至 2027-02-24。
+- 仓库尚未添加 LICENSE；代码再分发和二次使用许可仍待维护者明确。
