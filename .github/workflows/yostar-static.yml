@@ -1,0 +1,35 @@
+name: Yostar JP static research
+on:
+  push:
+    branches: [research/yostar-jp-installer]
+    paths:
+      - 'tools/yostar_static_probe.py'
+      - '.github/workflows/yostar-static.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Acquire and inventory pinned official installer
+        shell: pwsh
+        run: |
+          $seven = 'C:\Program Files\7-Zip\7z.exe'
+          if (-not (Test-Path $seven)) { throw '7-Zip not installed' }
+          python -m py_compile tools/yostar_static_probe.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tools/yostar_static_probe.py --sevenzip "$seven" --out evidence/yostar-static.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: yostar-static-inventory
+          path: evidence/yostar-static.json
+          if-no-files-found: warn
+          retention-days: 7
