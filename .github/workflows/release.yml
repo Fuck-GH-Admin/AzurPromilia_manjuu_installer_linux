@@ -77,7 +77,7 @@ jobs:
             cd "dist/$package"
             sha256sum azurpromilia > SHA256SUMS
           )
-          tar -C dist -czf "dist/$package.tar.gz" "$package"
+          tar -czf "dist/$package.tar.gz" -C dist "$package"
           (
             cd dist
             sha256sum "$package.tar.gz" > SHA256SUMS
