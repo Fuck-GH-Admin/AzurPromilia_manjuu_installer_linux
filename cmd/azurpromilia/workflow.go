@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync/atomic"
 )
@@ -116,6 +117,14 @@ func ensurePackageConfig(ctx context.Context, installer, requested, state, pytho
 	script, err := findBootstrapScript()
 	if err != nil {
 		return "", err
+	}
+	if _, lookErr := exec.LookPath(python); lookErr != nil {
+		return "", fmt.Errorf("Python 3 executable %q was not found; install Python 3 or pass --python /path/to/python3", python)
+	}
+	if runtime.GOOS != "windows" {
+		if _, lookErr := exec.LookPath(wine); lookErr != nil {
+			return "", fmt.Errorf("Wine executable %q was not found; install 64-bit Wine or pass --wine /path/to/wine", wine)
+		}
 	}
 	cmd := exec.CommandContext(ctx, python, script, "--installer", installer, "--out", abs, "--wine", wine)
 	cmd.Stdout = os.Stdout
