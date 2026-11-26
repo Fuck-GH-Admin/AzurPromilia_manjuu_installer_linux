@@ -27,6 +27,17 @@ jobs:
           cp README.md dist/README.md
           ./dist/azurpromilia-linux-amd64 help
           cd dist && sha256sum azurpromilia-linux-* > SHA256SUMS
+          cd ..
+          package="dist/package/azurpromilia-linux-amd64"
+          mkdir -p "$package/docs" "$package/tools"
+          cp dist/azurpromilia-linux-amd64 "$package/azurpromilia"
+          cp README.md "$package/README.md"
+          cp docs/PLAYER_GUIDE.md docs/PROTON_SETUP.md "$package/docs/"
+          cp tools/bootstrap.py tools/fetch_packageconfig.cjs tools/steam-launch-options.example "$package/tools/"
+          chmod 0755 "$package/azurpromilia"
+          (cd "$package" && sha256sum azurpromilia > SHA256SUMS)
+          tar -C dist/package -czf dist/azurpromilia-linux-amd64.tar.gz azurpromilia-linux-amd64
+          (cd dist && sha256sum azurpromilia-linux-amd64.tar.gz > PACKAGE_SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
           name: azurpromilia-linux
