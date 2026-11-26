@@ -182,45 +182,14 @@ Ubuntu 26.04.1 x86-64、Go 1.27.0、Wine 10.0，使用校验过 SHA-256 的原�
 - 安装目录占用 84,987,486,208 字节（约 84.99 GB，含索引和状态文件）。清理测试时创建的独立 Wine 前缀后，安装完成时文件系统可用约 14.19 GB。
 - 用 `50f80ca` 构建的 CLI 单独执行 `verify`，40,457 / 40,457 个文件通过大小与 MD5 校验，耗时约 38 秒，退出码 0，无网络传输。
 - 从测试目录移走一个 manifest 中的 4 字节资源后，以同一版本清单执行 `repair`。预检仅需 4 字节，官方 CDN 只传输了该资源。原 MD5 恢复，repair 退出码 0，耗时约 2 分 11 秒（含扫描现有文件）。修复后再次运行 `verify`，40,457 / 40,457 个文件通过，零失败。
-- 复查官方包清单仍是 `1.0.0.30`，未提供预下载版本。完整 SLICE 安装、真实版本升级和游戏运行仍待实测。
+- 复查官方包清单仍是 `1.0.0.30`，未提供预下载版本。完整 SLICE 安装和真实版本升级仍待实测。
+- 游戏运行已另行完成手动 Proton 配置；用户反馈已成功进入游戏。下载器不负责启动或管理 Proton，配置说明见 [PROTON_SETUP.md](PROTON_SETUP.md)。
+
 
 ---
 
-# Yostar 日本下载器：后续兼容性调查
+# Yostar 日本下载器：未来兼容计划（暂缓）
 
-GitHub Actions 已从日本官方 `azurpromilia.jp/PCdownload` 解析并下载当前 Yostar 安装器：
+Yostar 日本启动器已确认与当前 Manjuu / SC000 安装器的外层封装不同，初步静态信息保存在 [YOSTAR_COMPAT_RESEARCH.md](YOSTAR_COMPAT_RESEARCH.md)。
 
-- 官方包 host：`launcher-pkg-azupro-jp.yo-star.com`
-- 大小：179,893,048 bytes
-- SHA-256：
-  `dde29b4fa4a6eabfb664838c807460e65746f590f1a51754a33d976763bb1e3f`
-- 当前 Manjuu bootstrap 结果：
-  `embedded launcher ZIP not found`
-
-这说明它不是现有 SC000 安装器的同一外层封装。
-
-后续只做一轮静态结构调查，先回答以下问题：
-
-1. 安装器外层是什么：NSIS、Inno、MSI、7z SFX、Electron Builder，还是 Yostar 自研封装？
-2. 是否仍包含 Electron / Node / ASAR 启动器？
-3. 是否仍使用 Manjuu 的 `api-grp.manjuu.com`、相同 packageconfig API、SLICE/REALITY 索引格式？
-4. 是否只是“外层安装器不同，内部游戏下载协议相同”？
-5. AES/index 参数、CDN 域名、渠道字段是否不同？
-6. 游戏目录、版本文件和更新流程是否与 SC000 接近？
-
-优先目标不是维护两套代码，而是判断能否抽象成：
-
-```
-CLI / workflow
-      |
-common download + verify + update core
-      |
-+----------------------+----------------------+
-| Manjuu / SC000       | Yostar / JP          |
-| metadata adapter     | metadata adapter     |
-+----------------------+----------------------+
-```
-
-如果 Yostar 最终只是 metadata/bootstrap 不同，就只增加一个适配层，共用现有 downloader、Range、MD5、SLICE/REALITY、preload/update 代码。
-
-如果游戏下载协议本身也完全不同，再决定是否值得支持；在调查完成前不重构当前 Manjuu 主线。
+**当前不开展 Yostar 逆向、下载器适配或 CI 自动探测。** 优先完成 Manjuu / SC000 的 SLICE 全量安装、预下载和跨版本升级实测。待主线稳定后，再评估是否通过独立 metadata/bootstrap adapter 扩展 Yostar 支持；不复制维护整套下载核心。
