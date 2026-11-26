@@ -2,10 +2,14 @@ package main
 
 import (
 	"archive/zip"
+	"context"
 	"crypto/md5"
+	"errors"
 	"fmt"
+	"hash/crc32"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -150,5 +154,207 @@ func TestSelectPackageTypeDoesNotOverrideKnownServerMode(t *testing.T) {
 	}
 	if _, err := selectPackageType(2, "auto", type1); err == nil {
 		t.Fatal("downloadMode=REALITY must not silently fall back to SLICE")
+	}
+}
+
+
+func TestRunFileWorkersCancelsInFlightAndStopsDispatch(t *testing.T) {
+	files := []Entry{{Name: "bad"}, {Name: "slow"}, {Name: "never"}}
+	sentinel := errors.New("first file failed")
+	var started sync.WaitGroup
+	started.Add(2)
+	var mu sync.Mutex
+	called := make(map[string]int)
+
+	process := func(ctx context.Context, entry Entry) error {
+		mu.Lock()
+		called[entry.Name]++
+		mu.Unlock()
+		if entry.Name == "never" {
+			return nil
+		}
+		started.Done()
+		if entry.Name == "bad" {
+			started.Wait()
+			return sentinel
+		}
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	stats := runFileWorkers(context.Background(), files, 2, true, process)
+	if !errors.Is(stats.First, sentinel) {
+		t.Fatalf("first error = %v, want %v", stats.First, sentinel)
+	}
+	if stats.Failed != 1 {
+		t.Fatalf("failed = %d, want 1", stats.Failed)
+	}
+	if stats.Cancelled < 1 {
+		t.Fatalf("cancelled = %d, want at least 1", stats.Cancelled)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if called["never"] != 0 {
+		t.Fatalf("queued task started after first failure: %+v", called)
+	}
+}
+
+func TestRunFileWorkersKeepsScanningWhenStopOnErrorDisabled(t *testing.T) {
+	sentinel := errors.New("verification mismatch")
+	files := []Entry{{Name: "bad"}, {Name: "good"}}
+	var mu sync.Mutex
+	called := make(map[string]int)
+	stats := runFileWorkers(context.Background(), files, 1, false, func(_ context.Context, entry Entry) error {
+		mu.Lock()
+		called[entry.Name]++
+		mu.Unlock()
+		if entry.Name == "bad" {
+			return sentinel
+		}
+		return nil
+	})
+	if !errors.Is(stats.First, sentinel) || stats.Failed != 1 || stats.Completed != 1 {
+		t.Fatalf("unexpected worker stats: %+v", stats)
+	}
+	if called["bad"] != 1 || called["good"] != 1 {
+		t.Fatalf("verification did not inspect all entries: %+v", called)
+	}
+}
+
+func TestRequiredExtractionBytesCountsMissingAndCorruptFiles(t *testing.T) {
+	root := t.TempDir()
+	good := []byte("good")
+	corrupt := []byte("evil")
+	if err := os.WriteFile(filepath.Join(root, "good.bin"), good, 0644); err != nil {
+		t.Fatal(err)
+	}
+	entries := []ExtractedEntry{
+		{Name: "good.bin", Size: int64(len(good)), CRC32: crc32.ChecksumIEEE(good)},
+		{Name: "corrupt.bin", Size: int64(len(good)), CRC32: crc32.ChecksumIEEE(good)},
+		{Name: "missing.bin", Size: 7, CRC32: crc32.ChecksumIEEE([]byte("missing"))},
+	}
+	if err := os.WriteFile(filepath.Join(root, "corrupt.bin"), corrupt, 0644); err != nil {
+		t.Fatal(err)
+	}
+	required, err := requiredExtractionBytes(root, entries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := int64(len(good) + 7)
+	if required != want {
+		t.Fatalf("required bytes = %d, want %d", required, want)
+	}
+}
+
+func TestZipExtractedEntriesRejectsFileDirectoryConflict(t *testing.T) {
+	root := t.TempDir()
+	archive := filepath.Join(root, "conflict.zip")
+	f, err := os.Create(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	for _, name := range []string{"a/b.txt", "a"} {
+		w, createErr := zw.Create(name)
+		if createErr != nil {
+			t.Fatal(createErr)
+		}
+		if _, writeErr := w.Write([]byte("payload")); writeErr != nil {
+			t.Fatal(writeErr)
+		}
+	}
+	if err = zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = zipExtractedEntries(archive); err == nil {
+		t.Fatal("accepted a file that conflicts with a directory path")
+	}
+}
+
+
+func TestRequiredExtractionBytesRejectsNonRegularTarget(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "asset.bin"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := requiredExtractionBytes(root, []ExtractedEntry{{Name: "asset.bin", Size: 1}})
+	if err == nil {
+		t.Fatal("directory accepted as a ZIP file target")
+	}
+}
+
+
+func TestMergeRejectsSliceTotalMismatchBeforeWriting(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "slice-1"), []byte("abc"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	manifest := Manifest{
+		Files: []Entry{{Name: "slice-1", Size: 3, MD5: md5Of([]byte("abc"))}},
+		Archive: &Entry{Name: "game.zip", Size: 4, MD5: md5Of([]byte("abcd"))},
+	}
+	out := filepath.Join(root, "archive", "game.zip")
+	if err := merge(root, manifest, out); err == nil {
+		t.Fatal("merge accepted slice sizes that do not match the declared ZIP size")
+	}
+	if _, err := os.Stat(out + ".part"); !os.IsNotExist(err) {
+		t.Fatalf("merge created a partial archive before rejecting size mismatch: %v", err)
+	}
+}
+
+
+func TestMergeWritesAndVerifiesDeclaredArchive(t *testing.T) {
+	root := t.TempDir()
+	parts := [][]byte{[]byte("abc"), []byte("def")}
+	files := make([]Entry, 0, len(parts))
+	for i, data := range parts {
+		name := fmt.Sprintf("slice-%d", i+1)
+		if err := os.WriteFile(filepath.Join(root, name), data, 0644); err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, Entry{Name: name, Size: int64(len(data)), MD5: md5Of(data)})
+	}
+	archiveData := []byte("abcdef")
+	manifest := Manifest{
+		Files: files,
+		Archive: &Entry{Name: "game.zip", Size: int64(len(archiveData)), MD5: md5Of(archiveData)},
+	}
+	out := filepath.Join(root, "archive", "game.zip")
+	if err := merge(root, manifest, out); err != nil {
+		t.Fatal(err)
+	}
+	if !verify(out, *manifest.Archive) {
+		t.Fatal("merged archive did not match declared size and MD5")
+	}
+}
+
+func TestVerifiedRegularFile(t *testing.T) {
+	root := t.TempDir()
+	data := []byte("verified archive")
+	entry := Entry{Name: "archive.zip", Size: int64(len(data)), MD5: md5Of(data)}
+	path := filepath.Join(root, entry.Name)
+
+	ready, err := verifiedRegularFile(path, entry)
+	if err != nil || ready {
+		t.Fatalf("missing archive: ready=%v err=%v", ready, err)
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	ready, err = verifiedRegularFile(path, entry)
+	if err != nil || !ready {
+		t.Fatalf("valid archive: ready=%v err=%v", ready, err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := verifiedRegularFile(path, entry); err == nil {
+		t.Fatal("directory accepted as a verified archive")
 	}
 }

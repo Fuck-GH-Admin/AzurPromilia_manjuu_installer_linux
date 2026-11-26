@@ -20,3 +20,37 @@ func TestPerFileIndexCounts(t *testing.T) {
 		}
 	}
 }
+
+
+func TestDownloadFailsOverImmediatelyOnPermanentHTTPError(t *testing.T) {
+	data := []byte("cdn fallback payload")
+	var rejected, accepted atomic.Int64
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		rejected.Add(1)
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer first.Close()
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		accepted.Add(1)
+		_, _ = w.Write(data)
+	}))
+	defer second.Close()
+
+	root := t.TempDir()
+	entry := Entry{
+		Name: "asset.bin",
+		Remote: "/asset.bin",
+		MD5: fmt.Sprintf("%x", md5.Sum(data)),
+		Size: int64(len(data)),
+	}
+	var transferred atomic.Int64
+	if err := download(context.Background(), root, entry, []string{first.URL, second.URL}, &transferred); err != nil {
+		t.Fatal(err)
+	}
+	if rejected.Load() != 1 || accepted.Load() != 1 {
+		t.Fatalf("unexpected CDN attempts: rejected=%d accepted=%d", rejected.Load(), accepted.Load())
+	}
+	if !verify(filepath.Join(root, entry.Name), entry) {
+		t.Fatal("fallback CDN payload failed verification")
+	}
+}

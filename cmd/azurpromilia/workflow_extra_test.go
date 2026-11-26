@@ -2,10 +2,26 @@ package main
 
 import (
 	"archive/zip"
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestInfoUsesOptionalGameConfigAndLaunchEntry(t *testing.T) {
+	var response Response
+	response.Data.GameConfig = json.RawMessage(`{"gameFolderName":"Game_Data","launchEntry":"config.exe"}`)
+	response.Data.LaunchInfo = json.RawMessage(`{"launchEntry":"launcher.exe"}`)
+	var output bytes.Buffer
+	if err := printPackageInfo(&output, response); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "Game folder: Game_Data\nGame entry: launcher.exe\n") {
+		t.Fatalf("unexpected info output:\n%s", &output)
+	}
+}
 
 func TestPerFileIndexRejectsMismatchedCounts(t *testing.T) {
 	file := "0,3,900150983cd24fb0d6963f7d28e17f72,data/game.exe,/game.exe,\n"

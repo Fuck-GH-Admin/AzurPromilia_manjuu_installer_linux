@@ -1,14 +1,17 @@
 # AzurPromilia Manjuu Installer Linux
 
-非官方 Linux 原生 CLI。本机已通过官方包清单获取、两种包类型的 CDN 小文件探测和切片续传测试。当前为开发版；自动安装、预下载、升级和修复代码已加入，全量安装和更新仍待本地实服验收。
+非官方 Linux 原生 CLI。Manjuu / SC000 正式版 1.0.0.30 已完成 REALITY 全量安装、40,457 个资源文件的 MD5 校验、单文件修复和修复后复验；客户端也已在 Linux + Proton 下成功进入游戏。
 
 ## 当前状态与本地测试
 
 - [原版启动器安装、更新与预下载流程逆向记录](docs/ORIGINAL_LAUNCHER_FLOW.md)
 - [实现状态、已知缺口与验收标准](docs/IMPLEMENTATION_STATUS.md)
 - [本地测试步骤与问题反馈清单](docs/LOCAL_TESTING.md)
+- [SC000 全量安装验收步骤与实测记录](docs/NEXT_LIVE_TEST.md)
+- [未来计划：Yostar 日本启动器兼容性（暂缓）](docs/YOSTAR_COMPAT_RESEARCH.md)
+- [SC000 Proton 配置与启动记录](docs/PROTON_SETUP.md)
 
-请先阅读实现状态、原版流程和本地测试文档。核心工作流已经实现，但尚未完成整包下载、升级与游戏启动的实服验收。
+当前为开发版。SLICE 全量安装、预下载和跨版本升级仍待实服验收。下载器不负责启动游戏或修改 Steam/Proton；安装后的手动配置见下文。
 
 实测记录包含 HTTP 400 的对照结果、官方索引数据及 Range 续传的响应。[本机实测记录与直连命令](docs/LOCAL_TESTING.md)
 
@@ -31,7 +34,7 @@ python3 tools/bootstrap.py --installer /path/to/original.exe --out packageconfig
 
 引导器调用原版 Electron/N-API 组件生成匿名包清单请求，已在 Wine 10.0 和 `SC000` 样本上通过。它也会尝试获取游戏基础信息和 `/pre/check` 启动元数据；后两项若匿名接口不可用会作为可选信息跳过。下载器本身是 Linux 原生程序，也可直接导入自己取得的官方包清单。请将 `packageconfig.json` 保留在本机，其中可能有临时 CDN URL。
 
-## 完整工作流（开发中）
+## 下载、安装与维护工作流
 
 编译：
 
@@ -61,7 +64,7 @@ go build -trimpath -o azurpromilia ./cmd/azurpromilia
 ./azurpromilia verify --root "$HOME/Games/AzurPromilia"
 ```
 
-可用 `--mode slice` 或 `--mode reality` 覆盖首次安装模式；默认 `auto` 使用原版枚举：`downloadMode=1` 为分片 ZIP，`downloadMode=2` 为逐文件。新工作流目前不启动游戏，不修改 Proton；`info` 会显示服务器可提供的 launch metadata，供手动配置使用。
+可用 `--mode slice` 或 `--mode reality` 覆盖首次安装模式。默认 `auto` 使用原版枚举，`downloadMode=1` 为分片 ZIP，`downloadMode=2` 为逐文件。`info` 会显示服务器提供的游戏入口和启动参数。
 
 旧的 `download` 命令仍保留，适合指定 packageconfig 的底层下载/探测。
 
@@ -71,8 +74,8 @@ Linux 本机实测通过。Actions 中的 Official CDN live probe 是独立的�
 
 ## 证据与限制
 
-样本 SHA-256 为 `cf4b1f6233af2f2cb2d1c0de12f54d07606c3c84c829390b6caccfb2d0d1f04b`。内部 ZIP 位于偏移 12453620，包含 `resources/app.asar`、`res/app_config.dat` 和 Windows `cutils.node`。逐文件索引包含三列计数头、四列目录记录和五列文件记录。切片索引使用三列 ZIP 记录及五列切片记录。索引为 Base64 编码的 AES-CBC，先按 API 返回的大小和 MD5 验证密文。包清单签名由原版 Windows 原生模块处理。自动下载模式选择、预下载差异下载、版本索引保存、升级文件补齐与旧 manifest 文件清理已经写入代码；这些流程仍需全量真实版本测试。账号登录、token 刷新、全局升级事务回滚、游戏启动和 Proton 配置均未实现。
+样本 SHA-256 为 `cf4b1f6233af2f2cb2d1c0de12f54d07606c3c84c829390b6caccfb2d0d1f04b`。内部 ZIP 位于偏移 12453620，包含 `resources/app.asar`、`res/app_config.dat` 和 Windows `cutils.node`。逐文件索引包含三列计数头、四列目录记录和五列文件记录。切片索引使用三列 ZIP 记录及五列切片记录。索引为 Base64 编码的 AES-CBC，先按 API 返回的大小和 MD5 验证密文。包清单签名由原版 Windows 原生模块处理。预下载和跨版本升级仍需实服测试。下载器的包清单引导使用匿名请求，账号登录由游戏客户端处理。
 
 ## Proton
 
-Steam 添加实际游戏 EXE 为非 Steam 游戏，设置工作目录为游戏目录，兼容性选择 Proton/GE-Proton。可用 STEAM_COMPAT_DATA_PATH="$HOME/Games/compatdata/azurpromilia" %command% 隔离前缀。实际游戏 EXE 和运行兼容性待实测；不修改反作弊或游戏代码。
+下载器不会启动游戏或自动配置 Steam/Proton。REALITY 安装完成后，可按自己的环境手动添加 `AzurPromilia.exe` 为 Steam 非 Steam 游戏，选择兼容工具并配置独立前缀。已验证参数和可复制的启动选项见 [Proton 手动配置参考](docs/PROTON_SETUP.md) 与 [示例文件](tools/steam-launch-options.example)。

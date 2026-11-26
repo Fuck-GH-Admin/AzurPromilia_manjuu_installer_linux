@@ -8,7 +8,6 @@ import (
  "crypto/aes"
  "crypto/cipher"
  "crypto/md5"
- "hash/crc32"
  "encoding/base64"
  "encoding/hex"
  "encoding/json"
@@ -112,9 +111,17 @@ func getURLs(cdn []string,remote string)([]string,error){
 }
 type counter struct{ n *atomic.Int64 }
 func(c counter)Write(p []byte)(int,error){c.n.Add(int64(len(p)));return len(p),nil}
-func download(ctx context.Context,root string,e Entry,cdn []string,network *atomic.Int64)error{
- p,err:=safe(root,e.Name);if err!=nil{return err};if !validMD5(e.MD5)||e.Size<0{return errors.New("invalid file checksum or size")}
- if verify(p,e){return nil}
+func download(ctx context.Context, root string, e Entry, cdn []string, network *atomic.Int64) error {
+	return downloadFile(ctx, root, e, cdn, network, true)
+}
+
+func downloadAfterPreflight(ctx context.Context, root string, e Entry, cdn []string, network *atomic.Int64) error {
+	return downloadFile(ctx, root, e, cdn, network, false)
+}
+
+func downloadFile(ctx context.Context,root string,e Entry,cdn []string,network *atomic.Int64,checkExisting bool)error{
+ p,err:=safe(root,e.Name);if err!=nil{return err};if !validMD5(e.MD5)||e.Size<0||e.Size>=maxInt64{return errors.New("invalid file checksum or size")}
+ if st, statErr := os.Lstat(p); statErr == nil && !st.Mode().IsRegular() { return fmt.Errorf("download destination is not a regular file: %s", p) } else if statErr != nil && !os.IsNotExist(statErr) { return statErr }; if checkExisting && verify(p,e){return nil}
  if err=os.MkdirAll(filepath.Dir(p),0755);err!=nil{return err}
  part:=p+".part";if st,err:=os.Lstat(part);err==nil&&!st.Mode().IsRegular(){return fmt.Errorf("unsafe partial file %s",part)}
  urls,err:=getURLs(cdn,e.Remote);if err!=nil{return err}
@@ -124,11 +131,16 @@ func download(ctx context.Context,root string,e Entry,cdn []string,network *atom
   if verify(part,e){return os.Rename(part,p)}
   off:=int64(0);if st,er:=os.Stat(part);er==nil{off=st.Size();if off>=e.Size{if er=os.Remove(part);er!=nil{return er};off=0}}
   if e.Size==0{if err=os.WriteFile(part,nil,0644);err!=nil{return err};if !verify(part,e){return errors.New("empty file checksum mismatch")};return os.Rename(part,p)}
-  req,er:=http.NewRequestWithContext(ctx,"GET",urls[(attempt/3)%len(urls)],nil);if er!=nil{return er}
+  urlIndex := (attempt/3)%len(urls)
+  req,er:=http.NewRequestWithContext(ctx,"GET",urls[urlIndex],nil);if er!=nil{return er}
   if off>0{req.Header.Set("Range",fmt.Sprintf("bytes=%d-",off))}
   res,er:=client.Do(req)
+  nonRetryable := false
   if er==nil{
-   if res.StatusCode==http.StatusPartialContent{
+   if res.StatusCode >= 400 && res.StatusCode < 500 && res.StatusCode != http.StatusRequestTimeout && res.StatusCode != http.StatusTooEarly && res.StatusCode != http.StatusTooManyRequests {
+    er=fmt.Errorf("HTTP %d (non-retryable)",res.StatusCode)
+    nonRetryable=true
+   } else if res.StatusCode==http.StatusPartialContent{
     want:=fmt.Sprintf("bytes %d-%d/%d",off,e.Size-1,e.Size)
     if res.Header.Get("Content-Range")!=want{er=fmt.Errorf("invalid Content-Range: %s",res.Header.Get("Content-Range"))}
    }else if res.StatusCode==http.StatusOK{off=0}else{er=fmt.Errorf("HTTP %d",res.StatusCode)}
@@ -139,6 +151,14 @@ func download(ctx context.Context,root string,e Entry,cdn []string,network *atom
     if ce!=nil{er=ce}else if se!=nil{er=se}else if n!=e.Size-off{er=fmt.Errorf("incomplete response: %d/%d bytes",n,e.Size-off)}
    };res.Body.Close()
   }
+  if ctx.Err() != nil { return ctx.Err() }
+  if nonRetryable {
+   last=er
+   if urlIndex+1 >= len(urls) { return fmt.Errorf("%s: %w",e.Name,last) }
+   logf("CDN %s rejected %s: %v; trying next CDN", urls[urlIndex], e.Name, last)
+   attempt=(urlIndex+1)*3-1
+   continue
+  }
   if er==nil&&verify(part,e){return os.Rename(part,p)}
   if er==nil{er=errors.New("MD5 mismatch");_ = os.Remove(part)}
   last=er;logf("RETRY %s (%d): %v",e.Name,attempt+1,last)
@@ -146,6 +166,7 @@ func download(ctx context.Context,root string,e Entry,cdn []string,network *atom
  }
  return fmt.Errorf("%s: %w",e.Name,last)
 }
+
 func decrypt(data []byte,key,iv string)([]byte,error){
  b,err:=base64.StdEncoding.DecodeString(strings.TrimSpace(string(data)));if err!=nil{return nil,err}
  c,err:=aes.NewCipher([]byte(key));if err!=nil{return nil,err}
@@ -197,7 +218,7 @@ func parseIndex(raw []byte,slice bool)(Manifest,error){
   if len(a)!=5{return m,fmt.Errorf("unknown index row (%d columns)",len(a))}
   name,size,hash:=a[3],a[1],a[2];if slice{name,size,hash=a[3],a[2],a[3]}
   name=strings.ReplaceAll(name,"\\","/");n,e:=strconv.ParseInt(size,10,64)
-  if e!=nil||n<0||!validMD5(hash)||seen[strings.ToLower(name)]{return m,fmt.Errorf("invalid or duplicate record %q",name)}
+  if e!=nil||n<0||n>=maxInt64||!validMD5(hash)||seen[strings.ToLower(name)]{return m,fmt.Errorf("invalid or duplicate record %q",name)}
   if _,e=safe("/tmp",name);e!=nil{return m,e}
   if reservedGamePath(name)||strings.HasSuffix(strings.ToLower(name),".part"){return m,errors.New("reserved file path")}
   seen[strings.ToLower(name)]=true;m.Files=append(m.Files,Entry{name,a[4],hash,n})
@@ -206,55 +227,351 @@ func parseIndex(raw []byte,slice bool)(Manifest,error){
  if hasCounts && (uint64(len(m.Files)) != expectedFiles || uint64(len(m.Directories)) != expectedDirs || uint64(len(m.Files)+len(m.Directories)) != expectedTotal) { return m, fmt.Errorf("per-file index count mismatch: header total=%d files=%d dirs=%d, parsed total=%d files=%d dirs=%d", expectedTotal, expectedFiles, expectedDirs, len(m.Files)+len(m.Directories), len(m.Files), len(m.Directories)) }
  if len(m.Files)==0||slice&&m.Archive==nil{return m,errors.New("empty index or missing ZIP record")};return m,nil
 }
-func runFiles(ctx context.Context,root string,m Manifest,workers int,onlyVerify bool)error{
- ctx,cancel:=context.WithCancel(ctx);defer cancel()
- var net,done,checked,fail atomic.Int64;var total int64
- for _,e:=range m.Files{total+=e.Size}
- jobs:=make(chan Entry);var wg sync.WaitGroup;var first error;var mu sync.Mutex
- stop:=make(chan struct{});defer close(stop)
- go func(){t:=time.NewTicker(time.Second);defer t.Stop();var last int64;for{select{case <-stop:return;case <-t.C:n:=net.Load();logf("PROGRESS %d/%d files | %.2f/%.2f GiB verified | %.2f MiB/s | failed %d",checked.Load(),len(m.Files),float64(done.Load())/(1<<30),float64(total)/(1<<30),float64(n-last)/(1<<20),fail.Load());last=n}}}()
- for i:=0;i<workers;i++{wg.Add(1);go func(){defer wg.Done();for e:=range jobs{
-  p,err:=safe(root,e.Name)
-  if err==nil{if onlyVerify{if !verify(p,e){err=errors.New("missing or invalid")}}else{logf("FILE %s (%d bytes)",e.Name,e.Size);err=download(ctx,root,e,m.CDN,&net)}}
-  checked.Add(1);if err!=nil{fail.Add(1);logf("FAIL %s: %v",e.Name,err);mu.Lock();if first==nil{first=fmt.Errorf("%s: %w",e.Name,err)};mu.Unlock()}else{done.Add(e.Size)}
- }}()}
- send:for _,e:=range m.Files{select{case jobs<-e:case <-ctx.Done():break send}}
- close(jobs);wg.Wait();logf("RESULT %d/%d verified, %d failed; %d bytes transferred",checked.Load()-fail.Load(),len(m.Files),fail.Load(),net.Load())
- if ctx.Err()!=nil{return ctx.Err()};return first
+type fileWorkerStats struct {
+	Completed int64
+	Failed int64
+	Cancelled int64
+	First error
 }
+
+// runFileWorkers owns the worker lifecycle. Download workflows stop dispatching
+// immediately after the first fatal file error and cancel in-flight HTTP requests.
+// Verification deliberately keeps scanning so users get a complete failure list.
+func runFileWorkers(ctx context.Context, files []Entry, workers int, stopOnError bool, process func(context.Context, Entry) error) fileWorkerStats {
+	var stats fileWorkerStats
+	if workers < 1 {
+		stats.First = errors.New("workers must be at least 1")
+		return stats
+	}
+	workCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	jobs := make(chan Entry)
+	var wg sync.WaitGroup
+	var completed, failed, cancelled atomic.Int64
+	var first error
+	var firstMu sync.Mutex
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for entry := range jobs {
+				if workCtx.Err() != nil {
+					cancelled.Add(1)
+					continue
+				}
+				err := process(workCtx, entry)
+				if err == nil {
+					completed.Add(1)
+					continue
+				}
+				if workCtx.Err() != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+					cancelled.Add(1)
+					continue
+				}
+				failed.Add(1)
+				logf("FAIL %s: %v", entry.Name, err)
+				firstMu.Lock()
+				if first == nil {
+					first = err
+					if stopOnError {
+						logf("STOP: cancelling remaining downloads after first failed file")
+						cancel()
+					}
+				}
+				firstMu.Unlock()
+			}
+		}()
+	}
+
+send:
+	for _, entry := range files {
+		select {
+		case <-workCtx.Done():
+			break send
+		case jobs <- entry:
+		}
+	}
+	close(jobs)
+	wg.Wait()
+
+	stats.Completed = completed.Load()
+	stats.Failed = failed.Load()
+	stats.Cancelled = cancelled.Load()
+	stats.First = first
+	if stats.First == nil && ctx.Err() != nil {
+		stats.First = ctx.Err()
+	}
+	return stats
+}
+
+func runFiles(ctx context.Context, root string, m Manifest, workers int, onlyVerify bool) error {
+	return runFilesWithReserve(ctx, root, m, workers, onlyVerify, 0, "download")
+}
+
+func runFilesWithReserve(ctx context.Context, root string, m Manifest, workers int, onlyVerify bool, reserveBytes int64, operation string) error {
+	if reserveBytes < 0 {
+		return fmt.Errorf("invalid negative reserve for %s: %d", operation, reserveBytes)
+	}
+	if workers < 1 || workers > 32 {
+		return errors.New("workers must be 1..32")
+	}
+	var network, done, started, verified, failedProgress atomic.Int64
+	var total int64
+	for _, entry := range m.Files {
+		if entry.Size < 0 || entry.Size >= maxInt64 || entry.Size > maxInt64-total {
+			return fmt.Errorf("invalid or overflowing manifest size at %s", entry.Name)
+		}
+		total += entry.Size
+	}
+
+	valid := map[string]bool(nil)
+	if !onlyVerify {
+		var err error
+		valid, _, err = preflightFilesWithReserve(root, m.Files, reserveBytes, operation)
+		if err != nil {
+			return err
+		}
+	}
+
+	stop := make(chan struct{})
+	progressDone := make(chan struct{})
+	go func() {
+		defer close(progressDone)
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		var last int64
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				n := network.Load()
+				logf("PROGRESS %d started, %d verified, %d failed / %d total | %.2f/%.2f GiB | %.2f MiB/s",
+					started.Load(), verified.Load(), failedProgress.Load(), len(m.Files),
+					float64(done.Load())/(1<<30), float64(total)/(1<<30), float64(n-last)/(1<<20))
+				last = n
+			}
+		}
+	}()
+
+	process := func(workCtx context.Context, entry Entry) (processErr error) {
+		started.Add(1)
+		defer func() {
+			if processErr != nil && workCtx.Err() == nil {
+				failedProgress.Add(1)
+			}
+		}()
+		p, err := safe(root, entry.Name)
+		if err != nil {
+			return err
+		}
+		if onlyVerify {
+			if !verify(p, entry) {
+				return fmt.Errorf("%s: missing or invalid", entry.Name)
+			}
+		} else if !valid[entry.Name] {
+			logf("FILE %s (%d bytes)", entry.Name, entry.Size)
+			if err = downloadAfterPreflight(workCtx, root, entry, m.CDN, &network); err != nil {
+				return err
+			}
+		}
+		done.Add(entry.Size)
+		verified.Add(1)
+		return nil
+	}
+
+	stats := runFileWorkers(ctx, m.Files, workers, !onlyVerify, process)
+	close(stop)
+	<-progressDone
+	logf("RESULT %d/%d verified, %d failed, %d cancelled; %d bytes transferred",
+		stats.Completed, len(m.Files), stats.Failed, stats.Cancelled, network.Load())
+	if stats.First != nil {
+		return stats.First
+	}
+	return nil
+}
+
 func writeJSON(path string,v any)error{b,e:=json.MarshalIndent(v,"","  ");if e!=nil{return e};if e=os.MkdirAll(filepath.Dir(path),0755);e!=nil{return e};return os.WriteFile(path,b,0644)}
-func merge(root string,m Manifest,out string)error{
- if verify(out,*m.Archive){return nil}
- if e:=os.MkdirAll(filepath.Dir(out),0755);e!=nil{return e}
- f,e:=os.Create(out+".part");if e!=nil{return e}
- for _,v:=range m.Files{p,e:=safe(root,v.Name);if e!=nil{f.Close();return e};r,e:=os.Open(p);if e!=nil{f.Close();return e};_,e=io.Copy(f,r);r.Close();if e!=nil{f.Close();return e}}
- if e=f.Close();e!=nil{return e};if !verify(out+".part",*m.Archive){return errors.New("merged ZIP checksum mismatch")};return os.Rename(out+".part",out)
+func merge(root string, m Manifest, out string) error {
+	if m.Archive == nil {
+		return errors.New("missing ZIP archive metadata")
+	}
+	if m.Archive.Size < 0 || m.Archive.Size >= maxInt64 {
+		return errors.New("invalid or unrepresentable ZIP archive size")
+	}
+	for _, candidate := range []string{out, out + ".part"} {
+		if st, statErr := os.Lstat(candidate); statErr == nil && !st.Mode().IsRegular() {
+			return fmt.Errorf("merge target is not a regular file: %s", candidate)
+		} else if statErr != nil && !os.IsNotExist(statErr) {
+			return statErr
+		}
+	}
+	if verify(out, *m.Archive) {
+		return nil
+	}
+	var sliceBytes int64
+	for _, entry := range m.Files {
+		if entry.Size < 0 || entry.Size >= maxInt64 || entry.Size > maxInt64-sliceBytes {
+			return fmt.Errorf("invalid or overflowing slice size at %s", entry.Name)
+		}
+		sliceBytes += entry.Size
+		if sliceBytes > m.Archive.Size {
+			return fmt.Errorf("slice sizes exceed declared ZIP size: %d > %d", sliceBytes, m.Archive.Size)
+		}
+	}
+	if sliceBytes != m.Archive.Size {
+		return fmt.Errorf("slice sizes do not match declared ZIP size: %d != %d", sliceBytes, m.Archive.Size)
+	}
+	if err := os.MkdirAll(filepath.Dir(out), 0755); err != nil {
+		return err
+	}
+	if err := requireFreeSpace(filepath.Dir(out), m.Archive.Size, "merge slice archive"); err != nil {
+		return err
+	}
+	f, err := os.Create(out + ".part")
+	if err != nil {
+		return err
+	}
+	ok := false
+	defer func() {
+		f.Close()
+		if !ok {
+			os.Remove(out + ".part")
+		}
+	}()
+	for _, entry := range m.Files {
+		p, err := safe(root, entry.Name)
+		if err != nil {
+			return err
+		}
+		r, err := os.Open(p)
+		if err != nil {
+			return err
+		}
+		copied, copyErr := io.Copy(f, io.LimitReader(r, entry.Size+1))
+		closeErr := r.Close()
+		if copyErr == nil && copied != entry.Size {
+			copyErr = fmt.Errorf("slice size mismatch for %s: got %d, want %d", entry.Name, copied, entry.Size)
+		}
+		if copyErr != nil || closeErr != nil {
+			return errors.Join(copyErr, closeErr)
+		}
+	}
+	if err = f.Sync(); err != nil {
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	if !verify(out+".part", *m.Archive) {
+		return errors.New("merged ZIP checksum mismatch")
+	}
+	if err = os.Rename(out+".part", out); err != nil {
+		return err
+	}
+	ok = true
+	return nil
 }
-func extractZIP(path,root string)error{
- z,e:=zip.OpenReader(path);if e!=nil{return e};defer z.Close()
- for _,f:=range z.File{
-  name:=strings.TrimSuffix(strings.ReplaceAll(f.Name,"\\","/"),"/")
-  if reservedGamePath(name)||f.Mode()&os.ModeSymlink!=0{return fmt.Errorf("unsafe ZIP entry %s",name)}
-  p,e:=safe(root,name);if e!=nil{return e}
-  if f.FileInfo().IsDir(){if e=os.MkdirAll(p,0755);e!=nil{return e};continue}
-  if e=os.MkdirAll(filepath.Dir(p),0755);e!=nil{return e}
-  r,e:=f.Open();if e!=nil{return e};tmp,e:=os.CreateTemp(filepath.Dir(p),".ap-extract-");if e!=nil{r.Close();return e}
-  _,ce:=io.Copy(tmp,r);r.Close();se:=tmp.Close();if ce!=nil||se!=nil{os.Remove(tmp.Name());return errors.Join(ce,se)}
-  if e=os.Rename(tmp.Name(),p);e!=nil{os.Remove(tmp.Name());return e}
- };return nil
+
+func extractZIP(path, root string) error {
+	entries, err := zipExtractedEntries(path)
+	if err != nil {
+		return err
+	}
+	if st, statErr := os.Lstat(root); statErr == nil && st.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("symlink refused for extraction root: %s", root)
+	}
+	if err = os.MkdirAll(root, 0755); err != nil {
+		return err
+	}
+	required, err := requiredExtractionBytes(root, entries)
+	if err != nil {
+		return err
+	}
+	if err = requireFreeSpace(root, required, "ZIP extraction"); err != nil {
+		return err
+	}
+
+	z, err := zip.OpenReader(path)
+	if err != nil {
+		return err
+	}
+	defer z.Close()
+	for _, f := range z.File {
+		name := strings.TrimSuffix(strings.ReplaceAll(f.Name, "\\", "/"), "/")
+		p, err := safe(root, name)
+		if err != nil {
+			return err
+		}
+		if f.FileInfo().IsDir() {
+			dirMode := f.Mode().Perm()
+			if dirMode == 0 {
+				dirMode = 0755
+			}
+			if err = os.MkdirAll(p, dirMode); err != nil {
+				return err
+			}
+			continue
+		}
+		entry := ExtractedEntry{Name: name, Size: int64(f.UncompressedSize64), CRC32: f.CRC32}
+		if extractedEntryValid(root, entry) {
+			continue
+		}
+		if err = os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+			return err
+		}
+		r, err := f.Open()
+		if err != nil {
+			return err
+		}
+		tmp, err := os.CreateTemp(filepath.Dir(p), ".ap-extract-*")
+		if err != nil {
+			r.Close()
+			return err
+		}
+		tmpName := tmp.Name()
+		mode := f.Mode().Perm()
+		if mode == 0 {
+			mode = 0644
+		}
+		copyErr := tmp.Chmod(mode)
+		var copied int64
+		if copyErr == nil {
+			copied, copyErr = io.Copy(tmp, io.LimitReader(r, entry.Size+1))
+		}
+		readCloseErr := r.Close()
+		if copyErr == nil && copied != entry.Size {
+			copyErr = fmt.Errorf("ZIP entry size mismatch for %s: got %d, want %d", name, copied, entry.Size)
+		}
+		if readCloseErr != nil {
+			copyErr = errors.Join(copyErr, readCloseErr)
+		}
+		if copyErr == nil {
+			copyErr = tmp.Sync()
+		}
+		closeErr := tmp.Close()
+		if copyErr != nil || closeErr != nil {
+			_ = os.Remove(tmpName)
+			return errors.Join(copyErr, closeErr)
+		}
+		if err = os.Rename(tmpName, p); err != nil {
+			_ = os.Remove(tmpName)
+			return err
+		}
+	}
+	return nil
 }
-func verifyExtracted(archive,root string)error{
- z,e:=zip.OpenReader(archive);if e!=nil{return e};defer z.Close()
- var failed int
- for _,v:=range z.File{
-  if v.FileInfo().IsDir(){continue}
-  p,e:=safe(root,strings.ReplaceAll(v.Name,"\\","/"));if e!=nil{return e}
-  f,e:=os.Open(p);if e!=nil{failed++;logf("FAIL extracted %s: %v",v.Name,e);continue}
-  h:=crc32.NewIEEE();n,er:=io.Copy(h,f);f.Close()
-  if er!=nil||uint64(n)!=v.UncompressedSize64||h.Sum32()!=v.CRC32{failed++;logf("FAIL extracted %s",v.Name)}
- }
- if failed>0{return fmt.Errorf("%d extracted files invalid or missing",failed)};logf("Extracted ZIP files verified");return nil
+
+func verifyExtracted(archive, root string) error {
+	entries, err := zipExtractedEntries(archive)
+	if err != nil {
+		return err
+	}
+	return verifyExtractedEntries(root, entries)
 }
+
 func main(){if err:=run();err!=nil{logf("ERROR: %v",err);os.Exit(1)}}
 func run()error{
  if len(os.Args)<2{return errors.New("usage: azurpromilia download|verify --help")}
@@ -270,18 +587,41 @@ func run()error{
  var response Response;if e=json.Unmarshal(raw,&response);e!=nil{return e};if response.Code!=0{return fmt.Errorf("official API error %d",response.Code)}
  release:=response.Data.Released;if *target=="preload"{release=response.Data.Preload}else if *target!="released"{return errors.New("invalid target")}
  version:=strings.Trim(string(release.Version),"\"");if version==""||version=="null"||!regexp.MustCompile("^[a-zA-Z0-9_.-]+$").MatchString(version)||version=="."||version==".."{return errors.New("invalid/missing version")}
- typ,e:=selectPackageType(response.Data.DownloadMode,*mode,release.Packages);if e!=nil{return e};if *slice{typ=1};if *target=="preload"{typ=2};var pkg *Package
- for _,p:=range release.Packages{if p.Type==typ{v:=p;pkg=&v;break}}
- if pkg==nil{return fmt.Errorf("package type %d unavailable; inspect official response",typ)}
+ selectedMode := *mode
+ if *slice { selectedMode = "slice" }
+ if *target == "preload" { selectedMode = "reality" }
+ typ, e := selectPackageType(response.Data.DownloadMode, selectedMode, release.Packages)
+ if e != nil { return e }
+ pkg, e := findPackage(release, typ)
+ if e != nil { return e }
+ sliceMode := typ == 1
  cdn:=pkg.CDN;if len(release.CDN)>0{cdn=release.CDN}
  logf("VERSION %s (%s) package type %d; CDN count %d",version,release.Name,typ,len(cdn))
  indexRoot:=filepath.Join(state,"index");var network atomic.Int64
  index:=Entry{version+"-"+strconv.Itoa(typ),pkg.URL,pkg.MD5,pkg.Size}
  if e=download(ctx,indexRoot,index,cdn,&network);e!=nil{return e};raw,e=os.ReadFile(filepath.Join(indexRoot,index.Name));if e!=nil{return e}
- plain,e:=decrypt(raw,key,iv);if e!=nil{return e};m,e=parseIndex(plain,*slice);if e!=nil{return e};m.Version=version;m.CDN=cdn
+ plain,e:=decrypt(raw,key,iv);if e!=nil{return e};m,e=parseIndex(plain,sliceMode);if e!=nil{return e};m.Version=version;m.CDN=cdn
  if *probe{var chosen *Entry;for _,f:=range m.Files{if f.Size>0&&(chosen==nil||f.Size<chosen.Size){v:=f;chosen=&v}};if chosen==nil{return errors.New("no nonempty resources")};if chosen.Size>64<<20{return errors.New("smallest resource exceeds 64 MiB probe limit")};logf("LIVE PROBE: %s, %d bytes",chosen.Name,chosen.Size);if e=download(ctx,filepath.Join(state,"probe"),*chosen,cdn,&network);e!=nil{return e};logf("LIVE PROBE OK: official index and resource verified");return nil}
- work:=abs;if *target=="preload"{work=filepath.Join(abs,"_pre_download",version);manifestPath=filepath.Join(state,"preload-"+version+".json")};if *slice{work=filepath.Join(state,"slices",version)}
- if e=runFiles(ctx,work,m,*workers,false);e!=nil{return e}
- if m.Archive!=nil{out:=filepath.Join(state,"archives",version+".zip");if e=merge(work,m,out);e!=nil{return e};logf("ZIP verified: %s",out);if !*noExtract{dest:=abs;if *target=="preload"{dest=filepath.Join(abs,"_pre_download",version)};if e=extractZIP(out,dest);e!=nil{return e}}}else{for _,d:=range m.Directories{p,e:=safe(work,d);if e!=nil{return e};if e=os.MkdirAll(p,0755);e!=nil{return e}}}
+ work:=abs;if *target=="preload"{work=filepath.Join(abs,"_pre_download",version);manifestPath=filepath.Join(state,"preload-"+version+".json")}
+ if m.Archive!=nil {
+  if !sliceMode { return errors.New("slice archive metadata selected with a non-slice package") }
+  work=filepath.Join(state,"slices",version)
+  out:=filepath.Join(state,"archives",version+".zip")
+  archiveReady,checkErr:=verifiedRegularFile(out,*m.Archive);if checkErr!=nil{return checkErr}
+  if !archiveReady {
+   if e=runFilesWithReserve(ctx,work,m,*workers,false,m.Archive.Size,"SLICE download + ZIP merge");e!=nil{return e}
+   if e=merge(work,m,out);e!=nil{return e}
+  } else {
+   logf("ZIP already verified; reusing %s",out)
+   if *noExtract {
+    if e=runFiles(ctx,work,m,*workers,false);e!=nil{return e}
+   }
+  }
+  logf("ZIP verified: %s",out)
+  if !*noExtract { dest:=abs;if *target=="preload"{dest=filepath.Join(abs,"_pre_download",version)};if e=extractZIP(out,dest);e!=nil{return e} }
+ } else {
+  if e=runFiles(ctx,work,m,*workers,false);e!=nil{return e}
+  for _,d:=range m.Directories{p,e:=safe(work,d);if e!=nil{return e};if e=os.MkdirAll(p,0755);e!=nil{return e}}
+ }
  if e=writeJSON(manifestPath,m);e!=nil{return e};logf("COMPLETE %s | %s",version,manifestPath);return nil
 }

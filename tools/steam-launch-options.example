@@ -1,0 +1,6 @@
+# Steam > Azur Promilia > Properties > Launch Options
+# Replace YOUR_USER and the game path with your actual Linux paths.
+# Select dwproton-11.0-16 separately under Properties > Compatibility.
+PROTON_ENABLE_WAYLAND=1 STEAM_COMPAT_DATA_PATH=/home/YOUR_USER/Games/compatdata/azurpromilia-sc000-dwproton WINEPATH='Z:\home\YOUR_USER\Games\AzurPromilia\AzurPromilia_Data\Plugins\mj_sdk' %command% -start=azurpromilia_launcher -screen-fullscreen 0 -screen-width 1280 -screen-height 720
+
+# Optional diagnostics: prefix the launch options with PROTON_LOG=1

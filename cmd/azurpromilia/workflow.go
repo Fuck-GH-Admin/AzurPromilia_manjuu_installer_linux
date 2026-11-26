@@ -76,7 +76,7 @@ func runWorkflow(command string, args []string) error {
 	}
 	switch command {
 	case "info":
-		return printPackageInfo(response)
+		return printPackageInfo(os.Stdout, response)
 	case "install":
 		return installRelease(ctx, abs, state, *installer, response, *mode, *workers)
 	case "update":
@@ -493,55 +493,128 @@ func zipExtractedEntries(path string) ([]ExtractedEntry, error) {
 		return nil, err
 	}
 	defer z.Close()
-	out := make([]ExtractedEntry, 0, len(z.File))
-	seen := make(map[string]bool, len(z.File))
+
 	if len(z.File) > 100000 {
 		return nil, fmt.Errorf("ZIP has too many entries: %d", len(z.File))
 	}
+	out := make([]ExtractedEntry, 0, len(z.File))
+	seen := make(map[string]bool, len(z.File))
+	files := make(map[string]bool, len(z.File))
+	dirs := make(map[string]bool, len(z.File))
+	var total int64
+
 	for _, f := range z.File {
-		if f.FileInfo().IsDir() {
-			continue
+		name := strings.ReplaceAll(f.Name, "\\", "/")
+		isDir := f.FileInfo().IsDir()
+		if isDir {
+			name = strings.TrimSuffix(name, "/")
+		}
+		if name == "" || reservedGamePath(name) {
+			return nil, fmt.Errorf("ZIP uses reserved or empty path: %s", f.Name)
 		}
 		if f.Mode()&os.ModeSymlink != 0 {
 			return nil, fmt.Errorf("ZIP symlink refused: %s", f.Name)
 		}
-		name := strings.ReplaceAll(f.Name, "\\", "/")
-		key := strings.ToLower(strings.Trim(name, "/"))
-		if key == "" || reservedGamePath(name) {
-			return nil, fmt.Errorf("ZIP uses reserved or empty path: %s", f.Name)
+		modeType := f.Mode().Type()
+		if (!isDir && modeType != 0) || (isDir && modeType != 0 && modeType != os.ModeDir) {
+			return nil, fmt.Errorf("ZIP special file type refused: %s", f.Name)
 		}
+		if _, err := safe(os.TempDir(), name); err != nil {
+			return nil, err
+		}
+
+		key := strings.ToLower(name)
 		if seen[key] {
 			return nil, fmt.Errorf("ZIP contains duplicate path: %s", f.Name)
 		}
 		seen[key] = true
-		if _, err := safe(os.TempDir(), name); err != nil {
-			return nil, err
+
+		parent := key
+		for {
+			slash := strings.LastIndex(parent, "/")
+			if slash < 0 {
+				break
+			}
+			parent = parent[:slash]
+			if files[parent] {
+				return nil, fmt.Errorf("ZIP path conflicts with file entry: %s", f.Name)
+			}
+			dirs[parent] = true
 		}
-		out = append(out, ExtractedEntry{Name: name, Size: int64(f.UncompressedSize64), CRC32: f.CRC32})
+
+		if isDir {
+			if files[key] {
+				return nil, fmt.Errorf("ZIP directory conflicts with file entry: %s", f.Name)
+			}
+			dirs[key] = true
+			continue
+		}
+		if dirs[key] {
+			return nil, fmt.Errorf("ZIP file conflicts with directory entry: %s", f.Name)
+		}
+		files[key] = true
+
+		if f.UncompressedSize64 >= uint64(maxInt64) {
+			return nil, fmt.Errorf("ZIP entry is too large to extract safely: %s", f.Name)
+		}
+		size := int64(f.UncompressedSize64)
+		if size > maxInt64-total {
+			return nil, errors.New("ZIP total uncompressed size overflows")
+		}
+		total += size
+		out = append(out, ExtractedEntry{Name: name, Size: size, CRC32: f.CRC32})
 	}
 	return out, nil
 }
 
-func verifyExtractedEntries(root string, entries []ExtractedEntry) error {
-	var failed int
-	for _, e := range entries {
-		p, err := safe(root, e.Name)
-		if err != nil {
-			return err
+func extractedEntryValid(root string, entry ExtractedEntry) bool {
+	p, err := safe(root, entry.Name)
+	if err != nil {
+		return false
+	}
+	f, err := os.Open(p)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil || !st.Mode().IsRegular() || st.Size() != entry.Size {
+		return false
+	}
+	h := crc32.NewIEEE()
+	n, err := io.Copy(h, f)
+	return err == nil && n == entry.Size && h.Sum32() == entry.CRC32
+}
+
+func requiredExtractionBytes(root string, entries []ExtractedEntry) (int64, error) {
+	var required int64
+	for _, entry := range entries {
+		if entry.Size < 0 || entry.Size > maxInt64-required {
+			return 0, fmt.Errorf("invalid or overflowing ZIP extraction size at %s", entry.Name)
 		}
-		f, err := os.Open(p)
+		p, err := safe(root, entry.Name)
 		if err != nil {
-			failed++
-			logf("FAIL extracted %s: %v", e.Name, err)
+			return 0, err
+		}
+		if st, statErr := os.Lstat(p); statErr == nil && !st.Mode().IsRegular() {
+			return 0, fmt.Errorf("ZIP extraction target exists but is not a regular file: %s", entry.Name)
+		} else if statErr != nil && !os.IsNotExist(statErr) {
+			return 0, fmt.Errorf("inspect ZIP extraction target %s: %w", entry.Name, statErr)
+		}
+		if extractedEntryValid(root, entry) {
 			continue
 		}
-		st, statErr := f.Stat()
-		h := crc32.NewIEEE()
-		n, copyErr := io.Copy(h, f)
-		f.Close()
-		if statErr != nil || !st.Mode().IsRegular() || copyErr != nil || n != e.Size || h.Sum32() != e.CRC32 {
+		required += entry.Size
+	}
+	return required, nil
+}
+
+func verifyExtractedEntries(root string, entries []ExtractedEntry) error {
+	var failed int
+	for _, entry := range entries {
+		if !extractedEntryValid(root, entry) {
 			failed++
-			logf("FAIL extracted %s", e.Name)
+			logf("FAIL extracted %s: missing, non-regular, wrong size or CRC32 mismatch", entry.Name)
 		}
 	}
 	if failed > 0 {
@@ -551,9 +624,22 @@ func verifyExtractedEntries(root string, entries []ExtractedEntry) error {
 	return nil
 }
 
-func printPackageInfo(response Response) error {
+func printPackageInfo(w io.Writer, response Response) error {
 	r := response.Data.Released
-	fmt.Printf("Released: %s (%s)\n", releaseVersion(r), r.Name)
+	var gameConfig, launchInfo map[string]any
+	_ = json.Unmarshal(response.Data.GameConfig, &gameConfig)
+	_ = json.Unmarshal(response.Data.LaunchInfo, &launchInfo)
+	folder, entry := r.GameFolderName, r.LaunchEntry
+	if folder == "" {
+		folder, _ = gameConfig["gameFolderName"].(string)
+	}
+	if entry == "" {
+		entry, _ = launchInfo["launchEntry"].(string)
+		if entry == "" {
+			entry, _ = gameConfig["launchEntry"].(string)
+		}
+	}
+	fmt.Fprintf(w, "Released: %s (%s)\n", releaseVersion(r), r.Name)
 	mode := response.Data.DownloadMode
 	if mode == 0 {
 		mode = 1
@@ -562,34 +648,42 @@ func printPackageInfo(response Response) error {
 	if mode == 2 {
 		modeName = "reality"
 	}
-	fmt.Printf("Download mode: %d (%s)\n", mode, modeName)
-	fmt.Printf("Game folder: %s\nGame entry: %s\n", r.GameFolderName, r.LaunchEntry)
+	fmt.Fprintf(w, "Download mode: %d (%s)\n", mode, modeName)
+	fmt.Fprintf(w, "Game folder: %s\nGame entry: %s\n", folder, entry)
 	for _, p := range r.Packages {
-		fmt.Printf("Package type %d: %d bytes, %s, CDN hosts=%d\n", p.Type, p.Size, p.MD5, len(packageCDNs(r, p)))
+		fmt.Fprintf(w, "Package type %d: %d bytes, %s, CDN hosts=%d\n", p.Type, p.Size, p.MD5, len(packageCDNs(r, p)))
 	}
 	if v := releaseVersion(response.Data.Preload); v != "" {
-		fmt.Printf("Preload: %s (%s)\n", v, response.Data.Preload.Name)
+		fmt.Fprintf(w, "Preload: %s (%s)\n", v, response.Data.Preload.Name)
 		for _, p := range response.Data.Preload.Packages {
-			fmt.Printf("Preload package type %d: %d bytes, %s\n", p.Type, p.Size, p.MD5)
+			fmt.Fprintf(w, "Preload package type %d: %d bytes, %s\n", p.Type, p.Size, p.MD5)
 		}
 	} else {
-		fmt.Println("Preload: none")
+		fmt.Fprintln(w, "Preload: none")
 	}
-	if len(response.Data.GameConfig) > 0 && string(response.Data.GameConfig) != "null" {
-		var value any
-		if json.Unmarshal(response.Data.GameConfig, &value) == nil {
-			b, _ := json.MarshalIndent(value, "", "  ")
-			fmt.Printf("Game config metadata: %s\n", b)
-		}
+	if gameConfig != nil {
+		b, _ := json.MarshalIndent(gameConfig, "", "  ")
+		fmt.Fprintf(w, "Game config metadata: %s\n", b)
 	}
-	if len(response.Data.LaunchInfo) > 0 && string(response.Data.LaunchInfo) != "null" {
-		var value any
-		if json.Unmarshal(response.Data.LaunchInfo, &value) == nil {
-			b, _ := json.MarshalIndent(value, "", "  ")
-			fmt.Printf("Launch metadata (for manual Proton setup): %s\n", b)
-		}
+	if launchInfo != nil {
+		b, _ := json.MarshalIndent(launchInfo, "", "  ")
+		fmt.Fprintf(w, "Launch metadata (for manual Proton setup): %s\n", b)
 	}
 	return nil
+}
+
+func verifiedRegularFile(path string, entry Entry) (bool, error) {
+	st, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !st.Mode().IsRegular() {
+		return false, fmt.Errorf("verified file target is not a regular file: %s", path)
+	}
+	return verify(path, entry), nil
 }
 
 func installRelease(ctx context.Context, root, state, installer string, response Response, mode string, workers int) error {
@@ -629,13 +723,21 @@ func installRelease(ctx context.Context, root, state, installer string, response
 
 	slices, err := safe(root, filepath.Join(".azurpromilia", "slices", m.Version))
 	if err != nil { return err }
-	if err = runFiles(ctx, slices, m, workers, false); err != nil {
-		return err
-	}
 	archive, err := safe(root, filepath.Join(".azurpromilia", "archives", m.Version+".zip"))
 	if err != nil { return err }
-	if err = merge(slices, m, archive); err != nil {
+	archiveReady, err := verifiedRegularFile(archive, *m.Archive)
+	if err != nil {
 		return err
+	}
+	if !archiveReady {
+		if err = runFilesWithReserve(ctx, slices, m, workers, false, m.Archive.Size, "SLICE download + ZIP merge"); err != nil {
+			return err
+		}
+		if err = merge(slices, m, archive); err != nil {
+			return err
+		}
+	} else {
+		logf("SLICE ZIP already verified; reusing %s", archive)
 	}
 	extracted, err := zipExtractedEntries(archive)
 	if err != nil {
