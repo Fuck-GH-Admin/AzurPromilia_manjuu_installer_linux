@@ -2,7 +2,7 @@
 
 Manjuu / SC000 官方 PC 客户端的非官方 Linux 下载、安装与修复工具。
 
-项目从你自己取得的官方 SC000 Windows 安装器中读取必要参数，通过官方接口获取匿名包清单，再从官方 CDN 下载游戏资源。**不分发游戏文件，不处理账号登录，也不自动配置 Steam / Proton。**
+默认会自动从官方来源取得当前 SC000 启动器、获取匿名包清单并从官方 CDN 下载游戏资源。**玩家不需要自己寻找 Windows 安装器。** 项目不分发游戏文件，不处理账号登录，也不自动配置 Steam / Proton。
 
 ## 当前状态
 
@@ -16,25 +16,15 @@ Manjuu / SC000 官方 PC 客户端的非官方 Linux 下载、安装与修复工
 - 修复后再次 Verify 全部通过；
 - 手动配置 Proton 后已成功进入并运行游戏。
 
-尚未完成真实环境验收：
-
-- SLICE 全量安装；
-- Preload；
-- 跨版本 Update。
+尚未完成真实环境验收：SLICE 全量安装、Preload、跨版本 Update。
 
 Yostar 日本服当前不支持，相关研究暂缓。
 
 ## 下载
 
-### GitHub Release
+正式发布后，请优先从 [Releases](https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux/releases) 下载 Linux amd64 包。
 
-正式发布后，请优先从 [Releases](https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux/releases) 下载 Linux amd64 压缩包和 SHA256 校验文件。
-
-### 当前 Preview 构建
-
-在第一个 Release 发布前，可以从 [Actions](https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux/actions/workflows/build.yml) 选择最新成功的 **main** 构建，下载 artifact `azurpromilia-linux`。
-
-解压 artifact 后：
+在第一个 Release 发布前，可从 [Actions](https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux/actions/workflows/build.yml) 选择最新成功的 **main** 构建，下载 artifact `azurpromilia-linux`：
 
 ~~~bash
 sha256sum -c PACKAGE_SHA256SUMS
@@ -48,36 +38,48 @@ cd azurpromilia-linux-amd64
 - Linux x86-64；
 - Python 3；
 - 64 位 Wine；
-- 你自己从官方渠道取得的 Manjuu / SC000 Windows 安装器。
+- 足够的磁盘空间和网络。
 
-不需要安装 Go 或 Node.js。
+不需要安装 Go、Node.js，也不需要手动下载官方 Windows 启动器。
 
 ## 快速开始
 
 ~~~bash
 GAME_DIR="$HOME/Games/AzurPromilia"
-INSTALLER="$HOME/Downloads/AzurPromilia_manjuu_installer.exe"
 
 # 查看当前官方版本和下载模式
-./azurpromilia info \
-  --installer "$INSTALLER" \
-  --root "$GAME_DIR"
+./azurpromilia info --root "$GAME_DIR"
 
 # 首次安装
 ./azurpromilia install \
-  --installer "$INSTALLER" \
   --root "$GAME_DIR" \
   --workers 4
 
 # 完整校验
-./azurpromilia verify \
-  --root "$GAME_DIR"
+./azurpromilia verify --root "$GAME_DIR"
 
 # 同版本文件损坏时修复
 ./azurpromilia repair \
-  --installer "$INSTALLER" \
   --root "$GAME_DIR" \
   --workers 4
+~~~
+
+第一次运行需要官方元数据的命令时，程序会：
+
+1. 调用 Manjuu 官网当前使用的下载信息接口，获取 SC000 PC 启动器地址；
+2. 下载并验证启动器结构，缓存到用户缓存目录；
+3. 使用该启动器里的官方运行时取得匿名游戏包清单。
+
+如果官网发现接口临时不可用，会退回项目内置的最后一个已验证官方版本。目前内置兜底为 **SC000 1.0.2.2**，SHA-256：
+
+`0a1d1b97947838146c7b8f3f0d27dbba79e60372d043f60cd5401f2979531282`
+
+已有安装器或需要排障时，仍可手动覆盖：
+
+~~~bash
+./azurpromilia info \
+  --installer /path/to/AzurPromilia_manjuu_installer.exe \
+  --root "$GAME_DIR"
 ~~~
 
 默认使用 `--mode auto`，按官方返回的 `downloadMode` 选择包类型。当前实测服务器选择 REALITY。
@@ -86,9 +88,7 @@ INSTALLER="$HOME/Downloads/AzurPromilia_manjuu_installer.exe"
 
 ## 游戏启动
 
-下载器只负责资源下载、安装、校验和修复。
-
-Steam / Proton 需要用户自行配置。已验证的一套配置和启动选项示例见：
+下载器只负责资源下载、安装、校验和修复。Steam / Proton 由用户手动配置：
 
 - [Proton 手动配置](docs/PROTON_SETUP.md)
 - [Steam 启动选项示例](tools/steam-launch-options.example)
@@ -100,7 +100,7 @@ Steam / Proton 需要用户自行配置。已验证的一套配置和启动选�
 - 不建议在唯一的正式游戏目录中测试尚未验收的 Preload / Update。
 - `packageconfig.json` 可能包含临时 CDN URL，不要公开分享。
 - 本工具使用官方资源清单中的 MD5 / ZIP CRC32 做完整性检查，它们不是数字签名。
-- 只使用官方来源的安装器和游戏资源。
+- 自动获取的启动器只用于读取官方参数和运行元数据引导，不会安装 Windows 启动器。
 
 ## 开发资料
 
@@ -123,7 +123,7 @@ go vet ./...
 CGO_ENABLED=0 go build -trimpath -o ./azurpromilia ./cmd/azurpromilia
 ~~~
 
-运行时仍需 Python 3、64 位 Wine 和官方 SC000 安装器。请保留仓库中的 `tools/` 目录。
+运行时仍需 Python 3 和 64 位 Wine。请保留仓库中的 `tools/` 目录。
 
 ## License
 
