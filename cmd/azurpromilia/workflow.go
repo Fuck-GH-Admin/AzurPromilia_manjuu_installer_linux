@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync/atomic"
 )
@@ -25,7 +26,7 @@ type versionInfo struct {
 
 func runWorkflow(command string, args []string) error {
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
-	installer := fs.String("installer", "", "original Windows installer EXE")
+	installer := fs.String("installer", "", "optional SC000 installer EXE override; official installer is acquired automatically if omitted")
 	packageConfig := fs.String("packageconfig", "", "official packageconfig JSON; fetched automatically if omitted")
 	root := fs.String("root", "AzurPromilia", "game directory")
 	workers := fs.Int("workers", 4, "parallel downloads (1..32)")
@@ -38,9 +39,6 @@ func runWorkflow(command string, args []string) error {
 			return nil
 		}
 		return err
-	}
-	if *installer == "" {
-		return errors.New("--installer is required")
 	}
 	if *workers < 1 || *workers > 32 {
 		return errors.New("--workers must be 1..32")
@@ -66,7 +64,11 @@ func runWorkflow(command string, args []string) error {
 	if err = os.MkdirAll(state, 0700); err != nil {
 		return err
 	}
-	configPath, err := ensurePackageConfig(ctx, *installer, *packageConfig, state, *python, *wine, *refresh)
+	installerPath, err := resolveInstaller(ctx, *installer, state)
+	if err != nil {
+		return err
+	}
+	configPath, err := ensurePackageConfig(ctx, installerPath, *packageConfig, state, *python, *wine, *refresh)
 	if err != nil {
 		return err
 	}
@@ -78,13 +80,13 @@ func runWorkflow(command string, args []string) error {
 	case "info":
 		return printPackageInfo(os.Stdout, response)
 	case "install":
-		return installRelease(ctx, abs, state, *installer, response, *mode, *workers)
+		return installRelease(ctx, abs, state, installerPath, response, *mode, *workers)
 	case "update":
-		return updateRelease(ctx, abs, state, *installer, response, *workers)
+		return updateRelease(ctx, abs, state, installerPath, response, *workers)
 	case "repair":
-		return repairRelease(ctx, abs, state, *installer, response, *workers)
+		return repairRelease(ctx, abs, state, installerPath, response, *workers)
 	case "preload":
-		return preloadRelease(ctx, abs, state, *installer, response, *workers)
+		return preloadRelease(ctx, abs, state, installerPath, response, *workers)
 	default:
 		return fmt.Errorf("unknown workflow command %q", command)
 	}
@@ -116,7 +118,33 @@ func ensurePackageConfig(ctx context.Context, installer, requested, state, pytho
 	if err != nil {
 		return "", err
 	}
-	cmd := exec.CommandContext(ctx, python, script, "--installer", installer, "--out", abs, "--wine", wine)
+	pythonCommand := python
+	if _, lookErr := exec.LookPath(pythonCommand); lookErr != nil {
+		if python == "python3" {
+			if _, altErr := exec.LookPath("python"); altErr == nil {
+				pythonCommand = "python"
+			} else {
+				return "", fmt.Errorf("Python 3 was not found; install Python 3 or pass --python /path/to/python3")
+			}
+		} else {
+			return "", fmt.Errorf("Python executable %q was not found; pass --python /path/to/python3", python)
+		}
+	}
+	wineCommand := wine
+	if runtime.GOOS != "windows" {
+		if _, lookErr := exec.LookPath(wineCommand); lookErr != nil {
+			if wine == "wine" {
+				if _, altErr := exec.LookPath("wine64"); altErr == nil {
+					wineCommand = "wine64"
+				} else {
+					return "", fmt.Errorf("64-bit Wine was not found; install Wine or pass --wine /path/to/wine")
+				}
+			} else {
+				return "", fmt.Errorf("Wine executable %q was not found; pass --wine /path/to/wine", wine)
+			}
+		}
+	}
+	cmd := exec.CommandContext(ctx, pythonCommand, script, "--installer", installer, "--out", abs, "--wine", wineCommand)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	logf("METADATA bootstrap: %s %s", python, script)

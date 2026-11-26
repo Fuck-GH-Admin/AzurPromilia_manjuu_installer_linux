@@ -211,22 +211,20 @@ API 主站为 `api-grp.manjuu.com`，备用站为 `api-grp-l2.manjuu.com`。引�
 
 本节对应 `install`、`info`、`preload`、`update`、`repair`。SC000 在官方 REALITY 模式下完成了全量下载、安装与校验。首次测试请使用独立目录。
 
-### 自动获取当前官方元数据
+### 自动获取官方启动器与当前元数据
 
-不传 `--packageconfig` 时，程序会自动调用 `tools/bootstrap.py`，把 packageconfig 缓存到游戏目录的 `.azurpromilia/packageconfig.json`。默认每次刷新，避免拿旧版本清单执行 update。
+正常玩家流程不再要求 `--installer`。未指定时，程序会先查询官网生产下载接口并缓存当前 SC000 PC 启动器；官网发现不可用时先复用有效缓存，再使用内置的最后一个已验证官方版本。随后自动调用 `tools/bootstrap.py` 获取 packageconfig，并缓存到游戏目录的 `.azurpromilia/packageconfig.json`。
 
 ```bash
-./azurpromilia info \
-  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe"
+./azurpromilia info --root "$HOME/Games/AzurPromilia-test"
 ```
 
-Linux 需要 Python 3 和可运行原版 N-API 模块的 Wine。若二进制放在 GitHub Actions 的 `dist/` 目录中，需保留同目录下的 `tools/` 文件夹。若要离线重用已有 JSON，可显式传入 `--packageconfig ./packageconfig.json`。
+Linux 需要 Python 3 和可运行原版 N-API 模块的 Wine。缺失时 CLI 会给出明确提示。若二进制放在 GitHub Actions 的打包目录中，需保留同目录下的 `tools/` 文件夹。若要离线重用已有 JSON，可显式传入 `--packageconfig ./packageconfig.json`；如需复现实验中的旧安装器，可继续使用 `--installer /path/to/installer.exe` 手动覆盖。
 
 ### 首次安装：自动选择服务器模式
 
 ```bash
 ./azurpromilia install \
-  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \
   --root "$HOME/Games/AzurPromilia-test" \
   --workers 4
 ```
@@ -239,7 +237,6 @@ Linux 需要 Python 3 和可运行原版 N-API 模块的 Wine。若二进制放�
 
 ```bash
 ./azurpromilia preload \
-  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \
   --root "$HOME/Games/AzurPromilia-test" \
   --workers 4
 
@@ -255,7 +252,6 @@ preload 通过当前 released 与 preload 两份 packageType 2 索引按路径�
 
 ```bash
 ./azurpromilia update \
-  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \
   --root "$HOME/Games/AzurPromilia-test" \
   --workers 4
 
@@ -270,7 +266,6 @@ update 会对预下载缓存重新计算 MD5，复用匹配新版本索引的文
 
 ```bash
 ./azurpromilia repair \
-  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \
   --root "$HOME/Games/AzurPromilia-test" \
   --workers 4
 ```
@@ -334,3 +329,12 @@ GitHub hosted Windows runner 已确认可以访问官方网络，不需要把“
 SLICE 安装会在开始传输前同时计算缺失分片和合并 ZIP 的空间需求，避免先下载所有分片、再因无法保存 ZIP 而失败。普通安装路径若已有有效 ZIP 可直接复用；底层 `download --no-extract` 会保留分片，以便 `verify --no-extract` 检查切片和 ZIP。当前 SC000 正式版的分片总量与 ZIP 声明均为 75,145,275,761 bytes；从空目录安装时，下载与合并的最低峰值约 150.29 GB（140.0 GiB）。
 
 解压所需空间无法仅从切片索引得知，程序会在下载并合并 ZIP 后读取中央目录，再次检查解压阶段的额外空间。所有检查均基于当时文件系统可用空间，不是磁盘预留；请避免测试期间其他进程大量写盘。
+
+
+## 14. 自动官方启动器获取验证（2026-11-26）
+
+官网前端当前通过 `GET https://api-grp.manjuu.com/activity/web/download/info?gameId=35` 获取 PC 启动器地址。临时 Actions 真实公网测试确认当前返回 SC000 `1.0.2.2`，大小 `190835304` bytes，SHA-256 为：
+
+`0a1d1b97947838146c7b8f3f0d27dbba79e60372d043f60cd5401f2979531282`
+
+Run `45798993184` 将该真实文件写入自动缓存后，在**不传 `--installer`** 的情况下运行 CLI，成功通过 URL 发现、缓存 SHA-256 校验和现有 `installerKeys` 结构解析。该临时探针不会进入 main。
