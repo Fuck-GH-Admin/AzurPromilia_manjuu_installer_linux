@@ -1,0 +1,109 @@
+name: Publish Linux release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag, for example v0.1.0-preview.1"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Select and validate release tag
+        id: meta
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            tag="$INPUT_VERSION"
+          else
+            tag="$REF_NAME"
+          fi
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release tag: $tag" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [[ "$tag" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "make_latest=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "make_latest=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+          cache: false
+
+      - name: Test
+        run: |
+          go test -race ./...
+          go vet ./...
+          python3 -m py_compile tools/bootstrap.py
+          node --check tools/fetch_packageconfig.cjs
+
+      - name: Build and package Linux x86-64
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          package="azurpromilia-${RELEASE_TAG}-linux-amd64"
+          mkdir -p "dist/$package/docs" "dist/$package/tools"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o "dist/$package/azurpromilia" ./cmd/azurpromilia
+          cp README.md "dist/$package/README.md"
+          cp docs/PLAYER_GUIDE.md docs/PROTON_SETUP.md "dist/$package/docs/"
+          cp tools/bootstrap.py tools/fetch_packageconfig.cjs tools/steam-launch-options.example "dist/$package/tools/"
+          chmod 0755 "dist/$package/azurpromilia"
+          (
+            cd "dist/$package"
+            sha256sum azurpromilia > SHA256SUMS
+          )
+          tar -C dist -czf "dist/$package.tar.gz" "$package"
+          (
+            cd dist
+            sha256sum "$package.tar.gz" > SHA256SUMS
+          )
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          target_commitish: main
+          name: Azur Promilia Linux ${{ steps.meta.outputs.tag }}
+          body: |
+            Unofficial Linux CLI for the Manjuu / SC000 PC client.
+
+            Tested with SC000 1.0.0.30 in REALITY mode:
+            - Full install and 40,457-file MD5 verification passed.
+            - Single-file repair and post-repair verification passed.
+            - Manual Steam / Proton setup reached the game.
+
+            SLICE full installation and cross-version preload/update are not yet fully validated.
+            Read docs/PLAYER_GUIDE.md in the archive before use.
+          files: |
+            dist/azurpromilia-${{ steps.meta.outputs.tag }}-linux-amd64.tar.gz
+            dist/SHA256SUMS
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ steps.meta.outputs.prerelease }}
+          make_latest: ${{ steps.meta.outputs.make_latest }}
