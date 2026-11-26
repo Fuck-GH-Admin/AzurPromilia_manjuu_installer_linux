@@ -36,7 +36,7 @@ jobs:
           cp tools/bootstrap.py tools/fetch_packageconfig.cjs tools/steam-launch-options.example "$package/tools/"
           chmod 0755 "$package/azurpromilia"
           (cd "$package" && sha256sum azurpromilia > SHA256SUMS)
-          tar -C dist/package -czf dist/azurpromilia-linux-amd64.tar.gz azurpromilia-linux-amd64
+          tar -czf dist/azurpromilia-linux-amd64.tar.gz -C dist/package azurpromilia-linux-amd64
           (cd dist && sha256sum azurpromilia-linux-amd64.tar.gz > PACKAGE_SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
