@@ -64,10 +64,27 @@ func requireFreeSpace(path string, required int64, operation string) error {
 	return nil
 }
 
+func combinedSpaceRequirement(downloadBytes, reserveBytes int64) (int64, error) {
+	if downloadBytes < 0 || reserveBytes < 0 {
+		return 0, fmt.Errorf("negative disk-space requirement: download=%d reserve=%d", downloadBytes, reserveBytes)
+	}
+	if reserveBytes > maxInt64-downloadBytes {
+		return 0, fmt.Errorf("disk-space requirement overflows: download=%d reserve=%d", downloadBytes, reserveBytes)
+	}
+	return downloadBytes + reserveBytes, nil
+}
+
 // preflightFiles hashes existing files once, then estimates the additional bytes
 // needed for every missing or invalid resource. The returned map lets workers
 // skip a second hash of files already proven valid.
 func preflightFiles(root string, files []Entry) (map[string]bool, int64, error) {
+	return preflightFilesWithReserve(root, files, 0, "download")
+}
+
+func preflightFilesWithReserve(root string, files []Entry, reserveBytes int64, operation string) (map[string]bool, int64, error) {
+	if reserveBytes < 0 {
+		return nil, 0, fmt.Errorf("invalid negative reserve for %s: %d", operation, reserveBytes)
+	}
 	if st, err := os.Lstat(root); err == nil && st.Mode()&os.ModeSymlink != 0 {
 		return nil, 0, fmt.Errorf("symlink refused for download root: %s", root)
 	}
@@ -110,7 +127,11 @@ func preflightFiles(root string, files []Entry) (map[string]bool, int64, error) 
 		}
 		required += entry.Size
 	}
-	if err := requireFreeSpace(root, required, "download"); err != nil {
+	totalRequired, err := combinedSpaceRequirement(required, reserveBytes)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err := requireFreeSpace(root, totalRequired, operation); err != nil {
 		return nil, 0, err
 	}
 	return valid, required, nil
