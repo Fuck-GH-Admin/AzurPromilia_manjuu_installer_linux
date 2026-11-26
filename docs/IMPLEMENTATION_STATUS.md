@@ -141,6 +141,7 @@ GitHub Actions 验证记录：
 - 原完整工作流 Run #50（`45559651106`）通过 `go test -race ./...`、`go vet ./...`、Python/Node 检查、Linux amd64/arm64 构建及 Artifact 上传。
 - 第一阶段可靠性改动 Run #111（`45619034089`，head `272ef2f`）通过上述全部检查。
 - 随后加入分片总大小一致性、解压目标类型保护和更完整的空间/进度信息后，Run #139（`45620110972`，head `16019db`）再次通过 `go test -race ./...`、`go vet ./...`、Python/Node 检查、Linux amd64/arm64 构建及 Artifact 上传。
+- 加入 SLICE 下载 + ZIP 合并的前置联合空间检查、有效 ZIP 复用和手动 Proton 配置文档后，Run #218（`45783753599`，head `8d3c2ed`）通过 `go test -race ./...`、`go vet ./...`、Python/Node 检查、Linux amd64/arm64 构建及 Artifact 上传。
 
 ## 5. 验收标准
 
