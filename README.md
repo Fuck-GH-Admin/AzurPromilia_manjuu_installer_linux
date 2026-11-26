@@ -22,25 +22,24 @@ Yostar 日本服当前不支持，相关研究暂缓。
 
 ## 下载
 
-正式发布后，请优先从 [Releases](https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux/releases) 下载 Linux amd64 包。
+从 Release 选择与系统架构匹配的 Linux 包，同时下载 `SHA256SUMS`。`x86_64` 选 amd64，`aarch64` 选 arm64。[GitHub Releases](https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux/releases)
 
-在第一个 Release 发布前，可从 [Actions](https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux/actions/workflows/build.yml) 选择最新成功的 **main** 构建，下载 artifact `azurpromilia-linux`：
+以下用第一个预览版的 amd64 包举例：
 
 ~~~bash
-sha256sum -c PACKAGE_SHA256SUMS
-tar -xzf azurpromilia-linux-amd64.tar.gz
-cd azurpromilia-linux-amd64
+package=azurpromilia-v0.1.0-preview.1-linux-amd64
+sha256sum --ignore-missing -c SHA256SUMS
+tar -xzf "$package.tar.gz"
+cd "$package"
 ./azurpromilia help
 ~~~
 
-预编译包运行时需要：
+自动获取官方包清单需要：
 
-- Linux x86-64；
-- Python 3；
-- 64 位 Wine；
-- 足够的磁盘空间和网络。
+- Python 3 和可运行官方 x86-64 Windows 启动器的 Wine 环境
+- 足够的磁盘空间和网络
 
-不需要安装 Go、Node.js，也不需要手动下载官方 Windows 启动器。
+amd64 已通过自动引导和 CDN 实测。arm64 下载器可使用已有官方包清单和启动器文件；arm64 上的自动引导需具备运行 x86-64 Windows 程序的环境。
 
 ## 快速开始
 
@@ -105,6 +104,7 @@ GAME_DIR="$HOME/Games/AzurPromilia"
 ## 开发资料
 
 - [玩家使用指南](docs/PLAYER_GUIDE.md)
+- [预览版发布验证报告](docs/RELEASE_VALIDATION.md)
 - [实现状态](docs/IMPLEMENTATION_STATUS.md)
 - [本地测试记录](docs/LOCAL_TESTING.md)
 - [SC000 实服验收记录](docs/NEXT_LIVE_TEST.md)

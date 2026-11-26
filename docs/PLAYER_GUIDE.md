@@ -7,6 +7,7 @@
 | 项目 | 状态 |
 |---|---|
 | Linux x86-64 CLI | 已提供 |
+| Linux AArch64 CLI | 已提供。官方 x86-64 启动器自动引导需另有兼容运行环境 |
 | SC000 官方匿名包信息获取 | 已实测 |
 | REALITY 逐文件完整安装 | 已实测通过 |
 | 完整文件 MD5 校验 | 40,457 / 40,457 通过 |
@@ -20,22 +21,24 @@
 
 ## 2. 需要准备什么
 
-- Linux x86-64。当前实测环境为 Ubuntu 26.04.1；其他发行版未逐一验证。
+- Linux x86-64 或 AArch64。官方自动引导在 Ubuntu 26.04.1 x86-64 上实测。
 - Python 3。
-- 64 位 Wine。Wine 10.0 + 当前 SC000 样本已验证。
+- 能运行官方 x86-64 Windows 启动器的 Wine 环境。x86-64 上已通过 Wine 10.0 实测。
 - 足够的磁盘空间和稳定网络。
 - Steam 与 Proton：只在你希望通过 Steam/Proton 启动游戏时需要。
 
-**不需要**安装 Go、Node.js、Electron，也不需要自己寻找 Windows 安装器，前提是使用 Release 中的预编译 Linux amd64 程序。Go 只在从源码构建时需要。
+预编译包可直接运行下载器。首次自动引导下载 Windows 启动器，并通过 Wine 执行它内置的 Electron 运行时。Go 用于从源码构建。
+
+arm64 上若暂时没有适合官方启动器的运行环境，可先在 amd64 机器取得官方 `packageconfig.json` 和对应的启动器，再为下载命令同时指定 `--packageconfig` 与 `--installer`。
 
 ## 3. 下载并解压项目
 
-从 GitHub Releases 下载名称包含 linux-amd64 的压缩包和同一 Release 的 SHA256SUMS。
+下载与你的系统相符的 `linux-amd64` 或 `linux-arm64` 压缩包，以及该版本的 `SHA256SUMS`。[GitHub Releases](https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux/releases)
 
 解压后请保留目录结构，尤其不要把 azurpromilia 单独移动到其他地方：
 
 ~~~text
-azurpromilia-<version>-linux-amd64/
+azurpromilia-<version>-linux-<arch>/
 ├── azurpromilia
 ├── README.md
 ├── LICENSE
@@ -49,21 +52,18 @@ azurpromilia-<version>-linux-amd64/
     └── steam-launch-options.example
 ~~~
 
-在压缩包所在目录校验下载：
+在下载目录校验并解压。把示例中的版本和架构改成你下载的包。
 
 ~~~bash
+package=azurpromilia-v0.1.0-preview.1-linux-amd64
+sha256sum --ignore-missing -c SHA256SUMS
+tar -xzf "$package.tar.gz"
+cd "$package"
 sha256sum -c SHA256SUMS
-~~~
-
-进入解压目录：
-
-~~~bash
-cd azurpromilia-<version>-linux-amd64
-chmod +x ./azurpromilia
 ./azurpromilia help
 ~~~
 
-如果尚无公开 Release，可临时从 [Actions 构建记录](https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux/actions/workflows/build.yml) 选择最新成功的 main 分支构建，下载 artifact azurpromilia-linux。解压 artifact 后，先运行 `sha256sum -c PACKAGE_SHA256SUMS`，再解压其中的 `azurpromilia-linux-amd64.tar.gz`。Actions artifact 有保留期限。也可以按本文最后的“从源码构建”自行编译。
+要测试尚未发布的 main 分支，可下载最新成功构建的 `azurpromilia-linux` artifact。解压 artifact 后，先运行 `sha256sum -c PACKAGE_SHA256SUMS`，再解压其中的 `azurpromilia-linux-amd64.tar.gz`。[Actions 构建记录](https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux/actions/workflows/build.yml)
 
 ## 4. 官方 SC000 启动器自动获取
 

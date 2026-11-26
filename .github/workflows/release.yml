@@ -60,28 +60,28 @@ jobs:
           python3 -m py_compile tools/bootstrap.py
           node --check tools/fetch_packageconfig.cjs
 
-      - name: Build and package Linux x86-64
+      - name: Build and package Linux amd64 and arm64
         shell: bash
         env:
           RELEASE_TAG: ${{ steps.meta.outputs.tag }}
         run: |
           set -euo pipefail
-          package="azurpromilia-${RELEASE_TAG}-linux-amd64"
-          mkdir -p "dist/$package/docs" "dist/$package/tools"
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o "dist/$package/azurpromilia" ./cmd/azurpromilia
-          cp README.md "dist/$package/README.md"
-          cp LICENSE "dist/$package/LICENSE"
-          cp -r docs/. "dist/$package/docs/"
-          cp tools/bootstrap.py tools/fetch_packageconfig.cjs tools/steam-launch-options.example "dist/$package/tools/"
-          chmod 0755 "dist/$package/azurpromilia"
-          (
-            cd "dist/$package"
-            sha256sum azurpromilia > SHA256SUMS
-          )
-          tar -czf "dist/$package.tar.gz" -C dist "$package"
+          archives=()
+          for arch in amd64 arm64; do
+            package="azurpromilia-${RELEASE_TAG}-linux-$arch"
+            mkdir -p "dist/$package/docs" "dist/$package/tools"
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -o "dist/$package/azurpromilia" ./cmd/azurpromilia
+            cp README.md LICENSE "dist/$package/"
+            cp -r docs/. "dist/$package/docs/"
+            cp tools/bootstrap.py tools/fetch_packageconfig.cjs tools/steam-launch-options.example "dist/$package/tools/"
+            chmod 0755 "dist/$package/azurpromilia"
+            (cd "dist/$package" && sha256sum azurpromilia > SHA256SUMS)
+            tar -czf "dist/$package.tar.gz" -C dist "$package"
+            archives+=("$package.tar.gz")
+          done
           (
             cd dist
-            sha256sum "$package.tar.gz" > SHA256SUMS
+            sha256sum "${archives[@]}" > SHA256SUMS
           )
 
       - name: Publish GitHub Release
@@ -93,16 +93,22 @@ jobs:
           body: |
             Unofficial Linux CLI for the Manjuu / SC000 PC client.
 
+            Includes Linux amd64 and arm64 packages and SHA256SUMS.
+
             Tested with SC000 1.0.0.30 in REALITY mode:
+            - Automatic download of the official SC000 1.0.2.2 launcher and a live CDN resource probe passed.
             - Full install and 40,457-file MD5 verification passed.
             - Single-file repair and post-repair verification passed.
             - Manual Steam / Proton setup reached the game.
 
-            SLICE full installation and cross-version preload/update are not yet fully validated.
+            The arm64 downloader passed the live CDN probe under QEMU with an imported package list. Automatic metadata bootstrap on arm64 requires a runtime that can execute the x86-64 Windows launcher.
+            SLICE full installation and cross-version preload/update are pending.
             Licensed under PolyForm Noncommercial License 1.0.0. Commercial use is not permitted.
             Read docs/PLAYER_GUIDE.md and LICENSE in the archive before use.
+            [Release validation report](https://github.com/${{ github.repository }}/blob/${{ steps.meta.outputs.tag }}/docs/RELEASE_VALIDATION.md)
           files: |
             dist/azurpromilia-${{ steps.meta.outputs.tag }}-linux-amd64.tar.gz
+            dist/azurpromilia-${{ steps.meta.outputs.tag }}-linux-arm64.tar.gz
             dist/SHA256SUMS
           fail_on_unmatched_files: true
           generate_release_notes: true
