@@ -672,6 +672,20 @@ func printPackageInfo(w io.Writer, response Response) error {
 	return nil
 }
 
+func verifiedRegularFile(path string, entry Entry) (bool, error) {
+	st, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !st.Mode().IsRegular() {
+		return false, fmt.Errorf("verified file target is not a regular file: %s", path)
+	}
+	return verify(path, entry), nil
+}
+
 func installRelease(ctx context.Context, root, state, installer string, response Response, mode string, workers int) error {
 	indexVersion, err := safe(root, filepath.Join("_index", "version"))
 	if err != nil { return err }
@@ -709,13 +723,21 @@ func installRelease(ctx context.Context, root, state, installer string, response
 
 	slices, err := safe(root, filepath.Join(".azurpromilia", "slices", m.Version))
 	if err != nil { return err }
-	if err = runFiles(ctx, slices, m, workers, false); err != nil {
-		return err
-	}
 	archive, err := safe(root, filepath.Join(".azurpromilia", "archives", m.Version+".zip"))
 	if err != nil { return err }
-	if err = merge(slices, m, archive); err != nil {
+	archiveReady, err := verifiedRegularFile(archive, *m.Archive)
+	if err != nil {
 		return err
+	}
+	if !archiveReady {
+		if err = runFilesWithReserve(ctx, slices, m, workers, false, m.Archive.Size, "SLICE download + ZIP merge"); err != nil {
+			return err
+		}
+		if err = merge(slices, m, archive); err != nil {
+			return err
+		}
+	} else {
+		logf("SLICE ZIP already verified; reusing %s", archive)
 	}
 	extracted, err := zipExtractedEntries(archive)
 	if err != nil {
