@@ -1,0 +1,93 @@
+name: Probe official SC000 installer source
+
+on:
+  push:
+    branches:
+      - feature/builtin-installer-fallback-20261126
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect official website download metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p probe
+          python3 - <<'PY'
+          import html, json, pathlib, re, urllib.parse, urllib.request
+
+          base = "https://azurpromilia.manjuu.com/"
+          ua = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130 Safari/537.36"}
+
+          def get(url):
+              req = urllib.request.Request(url, headers=ua)
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  data = r.read()
+                  print("FETCH", r.status, len(data), r.geturl())
+                  return data, r.geturl(), dict(r.headers)
+
+          raw, final, headers = get(base)
+          text = raw.decode("utf-8", "replace")
+          pathlib.Path("probe/home.html").write_text(text, encoding="utf-8")
+
+          urls = set()
+          for m in re.findall(r'''(?:src|href)\s*=\s*["']([^"']+)["']''', text, re.I):
+              urls.add(urllib.parse.urljoin(final, html.unescape(m)))
+          for m in re.findall(r'''https?://[^"'<>\s]+''', text, re.I):
+              urls.add(html.unescape(m))
+
+          scripts = [u for u in urls if re.search(r'\.js(?:\?|$)', u, re.I)]
+          report = []
+          report.append("HOME_FINAL=" + final)
+          report.append("HOME_BYTES=" + str(len(raw)))
+          report.append("SCRIPTS=" + str(len(scripts)))
+
+          patterns = [
+              rb'https?://[^"\'<>\s]+\.exe(?:\?[^"\'<>\s]*)?',
+              rb'https?://[^"\'<>\s]+',
+              rb'[^"\'<>\s]{0,180}SC000[^"\'<>\s]{0,180}',
+              rb'[^"\'<>\s]{0,180}manjuu_installer[^"\'<>\s]{0,180}',
+              rb'[^"\'<>\s]{0,180}(?:pcDownload|downloadPc|downloadPC|windows|launcher)[^"\'<>\s]{0,180}',
+          ]
+
+          def scan(label, blob):
+              found = set()
+              for p in patterns:
+                  for m in re.finditer(p, blob, re.I):
+                      v = m.group(0)
+                      try:
+                          s = v.decode("utf-8", "replace")
+                      except Exception:
+                          continue
+                      if len(s) <= 500:
+                          found.add(s)
+              if found:
+                  report.append("\n## " + label)
+                  report.extend(sorted(found))
+
+          scan("home", raw)
+
+          for idx, url in enumerate(scripts):
+              try:
+                  blob, actual, _ = get(url)
+              except Exception as exc:
+                  report.append(f"FETCH_ERROR {url} {exc}")
+                  continue
+              pathlib.Path(f"probe/script-{idx}.js").write_bytes(blob)
+              scan("script " + actual, blob)
+
+          pathlib.Path("probe/report.txt").write_text("\n".join(report) + "\n", encoding="utf-8")
+          print("\n".join(report))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sc000-installer-source-probe
+          path: probe/report.txt
+          retention-days: 7
