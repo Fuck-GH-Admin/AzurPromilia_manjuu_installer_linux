@@ -25,7 +25,7 @@ type versionInfo struct {
 
 func runWorkflow(command string, args []string) error {
 	fs := flag.NewFlagSet(command, flag.ContinueOnError)
-	installer := fs.String("installer", "", "original Windows installer EXE")
+	installer := fs.String("installer", "", "optional SC000 installer EXE override; official installer is acquired automatically if omitted")
 	packageConfig := fs.String("packageconfig", "", "official packageconfig JSON; fetched automatically if omitted")
 	root := fs.String("root", "AzurPromilia", "game directory")
 	workers := fs.Int("workers", 4, "parallel downloads (1..32)")
@@ -38,9 +38,6 @@ func runWorkflow(command string, args []string) error {
 			return nil
 		}
 		return err
-	}
-	if *installer == "" {
-		return errors.New("--installer is required")
 	}
 	if *workers < 1 || *workers > 32 {
 		return errors.New("--workers must be 1..32")
@@ -66,7 +63,11 @@ func runWorkflow(command string, args []string) error {
 	if err = os.MkdirAll(state, 0700); err != nil {
 		return err
 	}
-	configPath, err := ensurePackageConfig(ctx, *installer, *packageConfig, state, *python, *wine, *refresh)
+	installerPath, err := resolveInstaller(ctx, *installer, state)
+	if err != nil {
+		return err
+	}
+	configPath, err := ensurePackageConfig(ctx, installerPath, *packageConfig, state, *python, *wine, *refresh)
 	if err != nil {
 		return err
 	}
@@ -78,13 +79,13 @@ func runWorkflow(command string, args []string) error {
 	case "info":
 		return printPackageInfo(os.Stdout, response)
 	case "install":
-		return installRelease(ctx, abs, state, *installer, response, *mode, *workers)
+		return installRelease(ctx, abs, state, installerPath, response, *mode, *workers)
 	case "update":
-		return updateRelease(ctx, abs, state, *installer, response, *workers)
+		return updateRelease(ctx, abs, state, installerPath, response, *workers)
 	case "repair":
-		return repairRelease(ctx, abs, state, *installer, response, *workers)
+		return repairRelease(ctx, abs, state, installerPath, response, *workers)
 	case "preload":
-		return preloadRelease(ctx, abs, state, *installer, response, *workers)
+		return preloadRelease(ctx, abs, state, installerPath, response, *workers)
 	default:
 		return fmt.Errorf("unknown workflow command %q", command)
 	}
