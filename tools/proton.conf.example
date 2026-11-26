@@ -1,0 +1,13 @@
+# Copy to ~/.config/azurpromilia/proton.conf, or set AZUR_PROTON_CONFIG to its path.
+# This file uses Bash assignment syntax.
+
+AZUR_STEAM_ROOT="$HOME/.steam/root"
+AZUR_PROTON_BIN="$AZUR_STEAM_ROOT/compatibilitytools.d/dwproton-11.0-16-x86_64/proton"
+AZUR_COMPATDATA="$HOME/Games/compatdata/azurpromilia-sc000-dwproton"
+
+PROTON_ENABLE_WAYLAND=1
+AZUR_FULLSCREEN=0
+AZUR_WIDTH=1280
+AZUR_HEIGHT=720
+
+# Optional diagnostics, e.g. PROTON_LOG=1 PROTON_LOG_DIR=/tmp

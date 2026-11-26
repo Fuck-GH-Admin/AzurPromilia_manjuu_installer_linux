@@ -9,8 +9,9 @@
 - [本地测试步骤与问题反馈清单](docs/LOCAL_TESTING.md)
 - [SC000 全量安装验收步骤与实测记录](docs/NEXT_LIVE_TEST.md)
 - [Yostar 日本启动器兼容性调查](docs/YOSTAR_COMPAT_RESEARCH.md)
+- [SC000 Proton 配置与启动记录](docs/PROTON_SETUP.md)
 
-当前为开发版。SLICE 全量安装、预下载、跨版本升级及游戏启动仍待实服验收。
+当前为开发版。SLICE 全量安装、预下载和跨版本升级仍待实服验收。
 
 实测记录包含 HTTP 400 的对照结果、官方索引数据及 Range 续传的响应。[本机实测记录与直连命令](docs/LOCAL_TESTING.md)
 
@@ -63,7 +64,7 @@ go build -trimpath -o azurpromilia ./cmd/azurpromilia
 ./azurpromilia verify --root "$HOME/Games/AzurPromilia"
 ```
 
-可用 `--mode slice` 或 `--mode reality` 覆盖首次安装模式；默认 `auto` 使用原版枚举：`downloadMode=1` 为分片 ZIP，`downloadMode=2` 为逐文件。新工作流目前不启动游戏，不修改 Proton；`info` 会显示服务器可提供的 launch metadata，供手动配置使用。
+可用 `--mode slice` 或 `--mode reality` 覆盖首次安装模式。默认 `auto` 使用原版枚举，`downloadMode=1` 为分片 ZIP，`downloadMode=2` 为逐文件。`info` 会显示服务器提供的游戏入口和启动参数。
 
 旧的 `download` 命令仍保留，适合指定 packageconfig 的底层下载/探测。
 
@@ -73,8 +74,8 @@ Linux 本机实测通过。Actions 中的 Official CDN live probe 是独立的�
 
 ## 证据与限制
 
-样本 SHA-256 为 `cf4b1f6233af2f2cb2d1c0de12f54d07606c3c84c829390b6caccfb2d0d1f04b`。内部 ZIP 位于偏移 12453620，包含 `resources/app.asar`、`res/app_config.dat` 和 Windows `cutils.node`。逐文件索引包含三列计数头、四列目录记录和五列文件记录。切片索引使用三列 ZIP 记录及五列切片记录。索引为 Base64 编码的 AES-CBC，先按 API 返回的大小和 MD5 验证密文。包清单签名由原版 Windows 原生模块处理。自动下载模式选择、预下载差异下载、版本索引保存、升级文件补齐与旧 manifest 文件清理已经写入代码；这些流程仍需全量真实版本测试。账号登录、token 刷新、全局升级事务回滚、游戏启动和 Proton 配置均未实现。
+样本 SHA-256 为 `cf4b1f6233af2f2cb2d1c0de12f54d07606c3c84c829390b6caccfb2d0d1f04b`。内部 ZIP 位于偏移 12453620，包含 `resources/app.asar`、`res/app_config.dat` 和 Windows `cutils.node`。逐文件索引包含三列计数头、四列目录记录和五列文件记录。切片索引使用三列 ZIP 记录及五列切片记录。索引为 Base64 编码的 AES-CBC，先按 API 返回的大小和 MD5 验证密文。包清单签名由原版 Windows 原生模块处理。预下载和跨版本升级仍需实服测试。下载器的包清单引导使用匿名请求，账号登录由游戏客户端处理。
 
 ## Proton
 
-Steam 添加实际游戏 EXE 为非 Steam 游戏，设置工作目录为游戏目录，兼容性选择 Proton/GE-Proton。可用 STEAM_COMPAT_DATA_PATH="$HOME/Games/compatdata/azurpromilia" %command% 隔离前缀。实际游戏 EXE 和运行兼容性待实测；不修改反作弊或游戏代码。
+本机使用 `dwproton-11.0-16` 和原生 Wayland 启动 SC000 客户端。配置清单含独立前缀、启动参数、启动脚本及模板。[Proton 配置与启动记录](docs/PROTON_SETUP.md)
