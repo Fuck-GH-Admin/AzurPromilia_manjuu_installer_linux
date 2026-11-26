@@ -69,14 +69,14 @@ jobs:
                       if len(s) <= 500:
                           found.add(s)
               marker_contexts = []
-              for marker in [b"nativeLauncherDownloadUrl", b"VITE_SSO_LAUNCHER_PATH", b"SC000", b"native-launcher"]:
+              for marker in [b"nativeLauncherDownloadUrl", b"VITE_SSO_LAUNCHER_PATH", b"SC000", b"native-launcher", b"/activity/web/download/info", b"downloadUrls", b"grpAppId"]:
                   start = 0
                   while True:
                       pos = blob.find(marker, start)
                       if pos < 0:
                           break
-                      lo = max(0, pos - 1800)
-                      hi = min(len(blob), pos + len(marker) + 1800)
+                      lo = max(0, pos - 5000)
+                      hi = min(len(blob), pos + len(marker) + 5000)
                       marker_contexts.append(blob[lo:hi].decode("utf-8", "replace"))
                       start = pos + len(marker)
                       if len(marker_contexts) >= 20:
