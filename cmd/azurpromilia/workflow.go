@@ -118,15 +118,33 @@ func ensurePackageConfig(ctx context.Context, installer, requested, state, pytho
 	if err != nil {
 		return "", err
 	}
-	if _, lookErr := exec.LookPath(python); lookErr != nil {
-		return "", fmt.Errorf("Python 3 executable %q was not found; install Python 3 or pass --python /path/to/python3", python)
-	}
-	if runtime.GOOS != "windows" {
-		if _, lookErr := exec.LookPath(wine); lookErr != nil {
-			return "", fmt.Errorf("Wine executable %q was not found; install 64-bit Wine or pass --wine /path/to/wine", wine)
+	pythonCommand := python
+	if _, lookErr := exec.LookPath(pythonCommand); lookErr != nil {
+		if python == "python3" {
+			if _, altErr := exec.LookPath("python"); altErr == nil {
+				pythonCommand = "python"
+			} else {
+				return "", fmt.Errorf("Python 3 was not found; install Python 3 or pass --python /path/to/python3")
+			}
+		} else {
+			return "", fmt.Errorf("Python executable %q was not found; pass --python /path/to/python3", python)
 		}
 	}
-	cmd := exec.CommandContext(ctx, python, script, "--installer", installer, "--out", abs, "--wine", wine)
+	wineCommand := wine
+	if runtime.GOOS != "windows" {
+		if _, lookErr := exec.LookPath(wineCommand); lookErr != nil {
+			if wine == "wine" {
+				if _, altErr := exec.LookPath("wine64"); altErr == nil {
+					wineCommand = "wine64"
+				} else {
+					return "", fmt.Errorf("64-bit Wine was not found; install Wine or pass --wine /path/to/wine")
+				}
+			} else {
+				return "", fmt.Errorf("Wine executable %q was not found; pass --wine /path/to/wine", wine)
+			}
+		}
+	}
+	cmd := exec.CommandContext(ctx, pythonCommand, script, "--installer", installer, "--out", abs, "--wine", wineCommand)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	logf("METADATA bootstrap: %s %s", python, script)
