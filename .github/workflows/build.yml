@@ -32,7 +32,7 @@ jobs:
           mkdir -p "$package/docs" "$package/tools"
           cp dist/azurpromilia-linux-amd64 "$package/azurpromilia"
           cp README.md "$package/README.md"
-          cp docs/PLAYER_GUIDE.md docs/PROTON_SETUP.md "$package/docs/"
+          cp -r docs/. "$package/docs/"
           cp tools/bootstrap.py tools/fetch_packageconfig.cjs tools/steam-launch-options.example "$package/tools/"
           chmod 0755 "$package/azurpromilia"
           (cd "$package" && sha256sum azurpromilia > SHA256SUMS)
