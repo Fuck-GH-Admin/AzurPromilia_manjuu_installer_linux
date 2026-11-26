@@ -5,11 +5,15 @@ on:
     paths:
       - 'tools/yostar_static_probe.py'
       - '.github/workflows/yostar-static.yml'
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   inventory:
+    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'research/yostar-jp-installer')
     runs-on: windows-latest
     timeout-minutes: 12
     steps:
@@ -17,14 +21,27 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Acquire and inventory pinned official installer
+      - name: Acquire pinned official installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force evidence | Out-Null
+          python -c "import sys; from pathlib import Path; sys.path.insert(0, 'tools'); import yostar_static_probe as p; f=Path('evidence/yostar-jp-original.exe'); p.acquire(f); h=p.digest(f); print('Installer bytes=',f.stat().st_size,'sha256=',h); assert f.stat().st_size == p.SIZE and h == p.EXPECTED"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yostar-jp-original-pinned
+          path: evidence/yostar-jp-original.exe
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+      - name: Inventory pinned official installer
         shell: pwsh
         run: |
           $seven = 'C:\Program Files\7-Zip\7z.exe'
           if (-not (Test-Path $seven)) { throw '7-Zip not installed' }
           python -m py_compile tools/yostar_static_probe.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python tools/yostar_static_probe.py --sevenzip "$seven" --out evidence/yostar-static.json
+          python tools/yostar_static_probe.py --installer evidence/yostar-jp-original.exe --sevenzip "$seven" --out evidence/yostar-static.json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         if: always()
