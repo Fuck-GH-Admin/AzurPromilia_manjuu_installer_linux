@@ -582,8 +582,9 @@ func run()error{
  ctx,cancel:=signal.NotifyContext(context.Background(),os.Interrupt);defer cancel()
  state:=filepath.Join(abs,".azurpromilia");manifestPath:=filepath.Join(state,"manifest.json");var m Manifest
  if cmd=="verify"{if *target=="preload"{if *versionFlag==""||!regexp.MustCompile("^[a-zA-Z0-9_.-]+$").MatchString(*versionFlag){return errors.New("verify preload requires --version")};manifestPath=filepath.Join(state,"preload-"+*versionFlag+".json")}else if *target!="released"{return errors.New("invalid target")};b,e:=os.ReadFile(manifestPath);if e!=nil{return e};if e=json.Unmarshal(b,&m);e!=nil{return e};work:=abs;if *target=="preload"{work=filepath.Join(abs,"_pre_download",m.Version)};if len(m.Extracted)>0{if e=verifyExtractedEntries(work,m.Extracted);e!=nil{return e};if len(m.Files)==0{return nil}};if m.Archive!=nil{archive:=filepath.Join(state,"archives",m.Version+".zip");if _,statErr:=os.Stat(archive);statErr==nil{if !verify(archive,*m.Archive){return errors.New("merged archive missing or invalid")};if !*noExtract{if e=verifyExtracted(archive,work);e!=nil{return e}}}else if len(m.Extracted)==0{return errors.New("merged archive missing or invalid")};work=filepath.Join(state,"slices",m.Version)};return runFiles(ctx,work,m,*workers,true)}
- if cmd!="download"{return errors.New("unknown command")};if *pkgPath==""||*exe==""{return errors.New("--packageconfig and --installer required")}
- key,iv,e:=installerKeys(*exe);if e!=nil{return e};raw,e:=os.ReadFile(*pkgPath);if e!=nil{return e}
+ if cmd!="download"{return errors.New("unknown command")};if *pkgPath==""{return errors.New("--packageconfig required")}
+ installerPath,e:=resolveInstaller(ctx,*exe,state);if e!=nil{return e}
+ key,iv,e:=installerKeys(installerPath);if e!=nil{return e};raw,e:=os.ReadFile(*pkgPath);if e!=nil{return e}
  var response Response;if e=json.Unmarshal(raw,&response);e!=nil{return e};if response.Code!=0{return fmt.Errorf("official API error %d",response.Code)}
  release:=response.Data.Released;if *target=="preload"{release=response.Data.Preload}else if *target!="released"{return errors.New("invalid target")}
  version:=strings.Trim(string(release.Version),"\"");if version==""||version=="null"||!regexp.MustCompile("^[a-zA-Z0-9_.-]+$").MatchString(version)||version=="."||version==".."{return errors.New("invalid/missing version")}
