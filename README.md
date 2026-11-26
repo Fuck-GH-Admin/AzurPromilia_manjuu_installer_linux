@@ -1,6 +1,6 @@
 # AzurPromilia Manjuu Installer Linux
 
-非官方 Linux 原生 CLI。Manjuu / SC000 正式版 1.0.0.30 已在本机通过 REALITY 全量安装、40,457 个资源文件的校验和单文件修复。两种包类型的小文件探测和切片续传也已通过。
+非官方 Linux 原生 CLI。Manjuu / SC000 正式版 1.0.0.30 已完成 REALITY 全量安装、40,457 个资源文件的 MD5 校验、单文件修复和修复后复验；客户端也已在 Linux + Proton 下成功进入游戏。
 
 ## 当前状态与本地测试
 
@@ -8,10 +8,10 @@
 - [实现状态、已知缺口与验收标准](docs/IMPLEMENTATION_STATUS.md)
 - [本地测试步骤与问题反馈清单](docs/LOCAL_TESTING.md)
 - [SC000 全量安装验收步骤与实测记录](docs/NEXT_LIVE_TEST.md)
-- [Yostar 日本启动器兼容性调查](docs/YOSTAR_COMPAT_RESEARCH.md)
+- [未来计划：Yostar 日本启动器兼容性（暂缓）](docs/YOSTAR_COMPAT_RESEARCH.md)
 - [SC000 Proton 配置与启动记录](docs/PROTON_SETUP.md)
 
-当前为开发版。SLICE 全量安装、预下载和跨版本升级仍待实服验收。
+当前为开发版。SLICE 全量安装、预下载和跨版本升级仍待实服验收。下载器不负责启动游戏或修改 Steam/Proton；安装后的手动配置见下文。
 
 实测记录包含 HTTP 400 的对照结果、官方索引数据及 Range 续传的响应。[本机实测记录与直连命令](docs/LOCAL_TESTING.md)
 
@@ -34,7 +34,7 @@ python3 tools/bootstrap.py --installer /path/to/original.exe --out packageconfig
 
 引导器调用原版 Electron/N-API 组件生成匿名包清单请求，已在 Wine 10.0 和 `SC000` 样本上通过。它也会尝试获取游戏基础信息和 `/pre/check` 启动元数据；后两项若匿名接口不可用会作为可选信息跳过。下载器本身是 Linux 原生程序，也可直接导入自己取得的官方包清单。请将 `packageconfig.json` 保留在本机，其中可能有临时 CDN URL。
 
-## 完整工作流（开发中）
+## 下载、安装与维护工作流
 
 编译：
 
@@ -78,4 +78,4 @@ Linux 本机实测通过。Actions 中的 Official CDN live probe 是独立的�
 
 ## Proton
 
-本机使用 `dwproton-11.0-16` 和原生 Wayland 启动 SC000 客户端。配置清单含独立前缀、启动参数、启动脚本及模板。[Proton 配置与启动记录](docs/PROTON_SETUP.md)
+下载器不会启动游戏或自动配置 Steam/Proton。REALITY 安装完成后，可按自己的环境手动添加 `AzurPromilia.exe` 为 Steam 非 Steam 游戏，选择兼容工具并配置独立前缀。已验证参数和可复制的启动选项见 [Proton 手动配置参考](docs/PROTON_SETUP.md) 与 [示例文件](tools/steam-launch-options.example)。
