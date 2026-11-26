@@ -611,7 +611,12 @@ func run()error{
   if !archiveReady {
    if e=runFilesWithReserve(ctx,work,m,*workers,false,m.Archive.Size,"SLICE download + ZIP merge");e!=nil{return e}
    if e=merge(work,m,out);e!=nil{return e}
-  } else { logf("ZIP already verified; reusing %s",out) }
+  } else {
+   logf("ZIP already verified; reusing %s",out)
+   if *noExtract {
+    if e=runFiles(ctx,work,m,*workers,false);e!=nil{return e}
+   }
+  }
   logf("ZIP verified: %s",out)
   if !*noExtract { dest:=abs;if *target=="preload"{dest=filepath.Join(abs,"_pre_download",version)};if e=extractZIP(out,dest);e!=nil{return e} }
  } else {
