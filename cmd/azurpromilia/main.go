@@ -574,7 +574,7 @@ func verifyExtracted(archive, root string) error {
 
 func main(){if err:=run();err!=nil{logf("ERROR: %v",err);os.Exit(1)}}
 func run()error{
- if len(os.Args)<2{return errors.New("usage: azurpromilia download|verify --help")}
+ if len(os.Args)<2{return errors.New("usage: azurpromilia install|update|repair|preload|info|download|verify --help")}
  cmd:=os.Args[1];if cmd=="help"||cmd=="--help"{fmt.Println("azurpromilia install|update|repair|preload|info|download|verify --help");return nil};if cmd=="install"||cmd=="update"||cmd=="repair"||cmd=="preload"||cmd=="info"{return runWorkflow(cmd,os.Args[2:])}
  fs:=flag.NewFlagSet(cmd,flag.ContinueOnError);root:=fs.String("root","AzurPromilia","game directory");pkgPath:=fs.String("packageconfig","","official packageconfig response JSON");exe:=fs.String("installer","","optional SC000 installer EXE override; acquired automatically if omitted");target:=fs.String("target","released","released or preload");workers:=fs.Int("workers",4,"parallel downloads");slice:=fs.Bool("slice",false,"select slice package");noExtract:=fs.Bool("no-extract",false,"do not extract ZIP");probe:=fs.Bool("probe",false,"only fetch official index and one smallest nonempty resource; do not install");versionFlag:=fs.String("version","","preload version for verification");mode:=fs.String("mode","auto","auto, slice or reality");if e:=fs.Parse(os.Args[2:]);e!=nil{if e==flag.ErrHelp{return nil};return e}
  if *workers<1||*workers>32{return errors.New("workers must be 1..32")}
