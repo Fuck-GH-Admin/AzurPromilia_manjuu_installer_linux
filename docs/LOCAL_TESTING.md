@@ -88,7 +88,7 @@ direct ./azurpromilia download \
 5. 从 CDN 下载该资源并校验大小和 MD5；
 6. 输出 `LIVE PROBE OK`。
 
-`--probe` 不会安装游戏文件，只会在测试目录 `.azurpromilia/` 下留下索引和探测资源。当前默认选择 `packageType=2`。若官方响应只有 `packageType=1`，需添加 `--slice`；不要假设两种模式都可用。
+`--probe` 把索引和探测资源保存在测试目录的 `.azurpromilia/`。默认按服务端 `downloadMode` 选包，可用 `--mode reality`、`--mode slice` 或兼容标志 `--slice` 显式选择。
 
 如果失败，请记录从 `VERSION`、`RETRY`、`FAIL` 到最终 `ERROR` 的完整日志，以及 HTTP 状态码和响应错误。不要只截取最后一行。
 
@@ -101,6 +101,7 @@ direct ./azurpromilia download \
   --installer "$HOME/Downloads/AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe" \
   --packageconfig ./packageconfig.json \
   --root "$HOME/Games/AzurPromilia-test" \
+  --mode reality \
   --workers 4
 ```
 
@@ -110,7 +111,7 @@ direct ./azurpromilia download \
 ./azurpromilia verify --root "$HOME/Games/AzurPromilia-test"
 ```
 
-本节使用旧的底层 `download` 命令，默认选择 `packageType=2`。它不会按 `downloadMode` 自动选择包类型，也不会完成完整工作流的版本状态管理。正常首次安装请使用第 11 节的 `install` 命令；`install --mode auto` 才会按服务端 `downloadMode` 选择包类型。
+本节显式选择 `packageType=2`。正常首次安装请使用第 11 节的 `install` 命令，完成版本标记和索引保存。
 
 如需检查断点续传，可在下载一个较大的文件时按 Ctrl+C，然后原命令重新运行。观察是否发送 Range 请求并正确续传。若服务器忽略 Range 并返回 200，程序应从头覆盖 `.part`，不能把完整响应追加到旧分片。
 
@@ -202,12 +203,11 @@ API 主站为 `api-grp.manjuu.com`，备用站为 `api-grp-l2.manjuu.com`。引�
 
 用已验证分片的前 42,991,616 字节创建 `.part` 后，下载器发送 `Range: bytes=42991616-`，主 CDN 返回 `206` 和 `Content-Range: bytes 42991616-45275760/45275761`，续传后的文件通过校验。
 
-全量下载、切片合并和解压、预下载、游戏启动仍待实服验证。
+后续 SC000 REALITY 全量安装见 [2026-11-26 实测记录](NEXT_LIVE_TEST.md)。
 
+## 11. 完整工作流命令
 
-## 11. 新增的完整工作流命令（待实服验收）
-
-本节对应 `install`、`info`、`preload`、`update`、`repair`。这些命令已经有代码实现，但**还没有完整游戏全量下载、真实版本升级的端到端验收记录**。第一次测试仍建议使用独立目录。
+本节对应 `install`、`info`、`preload`、`update`、`repair`。SC000 在官方 REALITY 模式下完成了全量下载、安装与校验。首次测试请使用独立目录。
 
 ### 自动获取当前官方元数据
 
@@ -285,7 +285,7 @@ repair 只对当前服务端版本逐文件检查大小和 MD5，不清理旧版
 6. 对一个可丢弃的测试目录运行 repair，确认损坏文件会重新下载。
 7. 全部完成后再考虑正式游戏目录。
 
-目前尚未测试整包下载、真实版本更新、其他渠道、登录态和游戏启动。已加入磁盘空间预检查、ZIP 解压保护和下载失败快速停止，具体行为见第 12 节；仍需通过本地验收。Proton 仍由用户自行配置；`info` 只显示匿名 API 能提供的 launch metadata。
+SLICE 全量安装、跨版本更新、其他渠道、登录和游戏启动仍待验收。空间预检查、ZIP 处理和下载失败处理见第 12 节。Proton 由用户自行配置，`info` 会显示匿名 API 提供的启动信息。
 
 
 ## 12. 第一阶段：下载可靠性改动
@@ -306,7 +306,7 @@ go test -race ./...
 go vet ./...
 ```
 
-这些本地测试只验证下载器自身的调度、空间估算和 ZIP 处理逻辑，不代表官方 CDN 的全量下载已经通过。
+官方 CDN 的全量下载结果记录在 [SC000 实服验收](NEXT_LIVE_TEST.md)。
 
 
 ## 13. Actions 公网能力确认与凌晨测试边界（2026-11-26）
@@ -324,4 +324,4 @@ GitHub hosted Windows runner 已确认可以访问官方网络，不需要把“
 - 网络与新 SHA 发现：Run #3 / `45660232078`
 - 新安装器结构验证：Run #5 / `45660583827`
 
-因此后续 Manjuu/SC000 的完整链路仍应使用我们已经验证过结构的原始 SC000 安装器。等本机具备供电和磁盘条件后，直接按第 11 节执行 `info -> install -> verify -> repair`；有真实 preload/新版本时再继续 `preload -> update -> verify`。
+本机 Manjuu / SC000 的全量测试使用原始 SC000 安装器。有真实 preload 和新正式版本时，再验证 `preload -> update -> verify`。

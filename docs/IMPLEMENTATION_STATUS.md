@@ -1,7 +1,8 @@
 # 当前实现状态与未完成事项
 
-> 更新日期：2026-11-25  
-> 状态：开发版 / 两种包类型的小文件实服探测通过；自动安装、预下载、升级和修复代码已加入，完整流程仍待本地实服验收。
+> 更新日期：2026-11-26
+>
+> 状态：开发版 / SC000 正式版 1.0.0.30 的 REALITY 全量安装通过。SLICE 全量安装、预下载、升级和游戏启动待验收。
 
 本文以仓库当前 Go 源码、工作流和用户提供的 Windows 安装器 `AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe` 为依据。区分“源码已经实现”“原始 EXE 中已确认”“仍需真实环境验证”，不把单元测试或本地 HTTP 测试当成官方服务端证据。
 
@@ -77,26 +78,22 @@
 ### P0：官方 API 客户端仍依赖原版 Windows N-API
 
 - 当前没有纯 Go 官方 API 签名实现。Linux 工作流调用用户原始安装器中的 Electron/N-API 模块，由 Wine 执行一次性 bootstrap。
-- packageconfig 匿名请求已在本机 Wine 10.0 / SC000 样本上实测通过；config 与 pre/check 是新增可选请求，尚未单独取得真实成功记录。
+- SC000 样本在 Wine 10.0 下实测通过匿名 packageconfig、config 和 pre/check。config 返回游戏目录名，pre/check 返回当前版本的启动入口。
 - 不支持账号登录、uid/utoken、token 刷新及需要登录的接口。
 - bootstrap 固定使用 SC000 和简化 client-info；其他渠道、Windows 原生环境、不同 Wine 版本仍待验证。
 - 自动工作流默认刷新 packageconfig；显式传入 --packageconfig 时可离线使用已有响应。
 
-### P0：完整安装链路尚未完成实服验收
+### P0：SLICE 完整安装待实服验收
 
-本机已完成两种包类型的小文件官方 CDN 探测、MD5/大小校验和 Range 续传，但以下环节仍需真实完整测试：
+本机 `install` 按官方 `downloadMode=2` 选择 REALITY，全量安装并检查了 40,457 个文件。安装版本、索引文件与官方清单一致，官方入口已落盘。[实服验收和空间数据](NEXT_LIVE_TEST.md#8-2026-11-26-manjuu--sc000-实测)
 
-1. install 选择正确的 downloadMode 并完成整包安装；
-2. SLICE 模式完成全部分片下载、ZIP 合并、解压和解压后 CRC32/大小校验；
-3. REALITY 模式完成全部 40,457 个文件下载与最终 verify；
-4. 安装目录结构、官方 `_index/version` 状态与实际启动入口一致；
-5. 完整更新、修复和预下载流程在官方版本变化时跑通。
+SLICE 已通过小文件探测和分片续传。完整分片下载、ZIP 合并、解压以及解压后 CRC32 / 大小校验仍待实测。
 
-### P1：预下载、升级与修复已实现代码，尚未端到端验证
+### P1：预下载和跨版本升级待实测
 
 - preload 读取当前 released 和 preload 两份 packageType 2 索引，按相对路径与 MD5 比较，仅下载差异文件到 `_pre_download/<version>`。
 - update 使用新版本索引重新验证暂存文件，复用有效预下载文件，下载其余文件；成功后清理旧 manifest 中已废弃的文件。
-- repair 使用当前版本 packageType 2 索引逐项检查 MD5，只补齐损坏或缺失文件。
+- repair 使用当前版本 packageType 2 索引逐项检查 MD5。本机关闭代理后实测移走一个已验证的 4 字节资源，repair 只重新下载该文件，MD5 恢复。
 - 当前更新采用逐文件 .part + 校验 + rename，支持失败后重新运行继续；**没有整次升级的全局事务回滚**。如果更新中断，部分新文件可能已经落盘，但版本标记只在成功完成后更新，重新执行 update 可继续收敛。
 - `gameExcludedFileList` 现在作为清理保护规则使用；原版样本中虽有 parseExcludeList 方法，但未找到其在升级路径的调用，因此 Linux 侧的保护行为属于更谨慎的实现，而不是声称逐字复刻原版。
 - 不会清理旧 manifest 未追踪的未知文件；不会扫描并删除用户自建内容。
@@ -152,13 +149,15 @@ GitHub Actions 验证记录：
 - [x] 两种 `--probe` 均通过官方索引 MD5、解密和解析。
 - [x] 两种 `--probe` 均下载真实资源并完成文件大小、MD5 校验。
 - [x] 用预置 `.part` 确认官方 CDN 的 Range 续传及最终校验。
-- [ ] 完成 REALITY 模式的全量下载与 `verify`。
+- [x] 完成 REALITY 模式的全量下载与 `verify`，40,457 个文件全部通过。
 - [ ] 完成 SLICE 模式的全量分片下载、合并 ZIP、解压和 `verify`。
 - [ ] 完成 preload 差异下载，并确认 update 复用预下载文件后仍通过最终 verify。
-- [ ] 完成真实版本升级与 repair 测试，确认旧文件清理范围正确。
-- [ ] 确认游戏目录结构、关键资源、`_index/version` 和实际启动入口与官方安装结果一致。
+- [x] 完成同版本 repair 实测，只补齐缺失资源。
+- [ ] 完成真实跨版本升级，确认旧文件清理范围正确。
+- [x] 确认 REALITY 目录与官方资源清单一致，`_index/version` 与本地 manifest 版本一致，官方入口文件已落盘。
+- [ ] 启动游戏并验证运行兼容性。
 - [ ] 测试中断、磁盘空间不足和网络故障后的恢复行为。
-- [ ] 第一阶段新增的 worker 取消、磁盘预检查与 ZIP 安全回归测试通过 GitHub Actions。
+- [x] worker 取消、磁盘预检查与 ZIP 回归测试通过 GitHub Actions。
 
 
 

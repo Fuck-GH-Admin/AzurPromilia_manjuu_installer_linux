@@ -1,16 +1,16 @@
 # AzurPromilia Manjuu Installer Linux
 
-非官方 Linux 原生 CLI。本机已通过官方包清单获取、两种包类型的 CDN 小文件探测和切片续传测试。当前为开发版；自动安装、预下载、升级和修复代码已加入，全量安装和更新仍待本地实服验收。
+非官方 Linux 原生 CLI。Manjuu / SC000 正式版 1.0.0.30 已在本机通过 REALITY 全量安装、40,457 个资源文件的校验和单文件修复。两种包类型的小文件探测和切片续传也已通过。
 
 ## 当前状态与本地测试
 
 - [原版启动器安装、更新与预下载流程逆向记录](docs/ORIGINAL_LAUNCHER_FLOW.md)
 - [实现状态、已知缺口与验收标准](docs/IMPLEMENTATION_STATUS.md)
 - [本地测试步骤与问题反馈清单](docs/LOCAL_TESTING.md)
-- [明早实服测试要点](docs/NEXT_LIVE_TEST.md)
+- [SC000 全量安装验收步骤与实测记录](docs/NEXT_LIVE_TEST.md)
 - [Yostar 日本启动器兼容性调查](docs/YOSTAR_COMPAT_RESEARCH.md)
 
-请先阅读实现状态、原版流程和本地测试文档。核心工作流已经实现，但尚未完成整包下载、升级与游戏启动的实服验收。
+当前为开发版。SLICE 全量安装、预下载、跨版本升级及游戏启动仍待实服验收。
 
 实测记录包含 HTTP 400 的对照结果、官方索引数据及 Range 续传的响应。[本机实测记录与直连命令](docs/LOCAL_TESTING.md)
 
