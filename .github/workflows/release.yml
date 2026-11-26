@@ -70,7 +70,7 @@ jobs:
           mkdir -p "dist/$package/docs" "dist/$package/tools"
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o "dist/$package/azurpromilia" ./cmd/azurpromilia
           cp README.md "dist/$package/README.md"
-          cp docs/PLAYER_GUIDE.md docs/PROTON_SETUP.md "dist/$package/docs/"
+          cp -r docs/. "dist/$package/docs/"
           cp tools/bootstrap.py tools/fetch_packageconfig.cjs tools/steam-launch-options.example "dist/$package/tools/"
           chmod 0755 "dist/$package/azurpromilia"
           (
