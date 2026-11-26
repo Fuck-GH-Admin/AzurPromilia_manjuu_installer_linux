@@ -98,6 +98,55 @@ jobs:
               pathlib.Path(f"probe/script-{idx}.js").write_bytes(blob)
               scan("script " + actual, blob)
 
+          import hashlib, time
+
+          api = "https://api-grp.manjuu.com/activity/web/download/info"
+          ts = str(int(time.time() * 1000))
+          query = "gameId=35"
+          sign = hashlib.md5((ts + query).encode("utf-8")).hexdigest()
+          req = urllib.request.Request(
+              api + "?" + query,
+              headers={
+                  **ua,
+                  "grp-app-id": "350010",
+                  "grp-channel-code": "C000",
+                  "grp-sub-channel-code": "SC000",
+                  "device-id": "",
+                  "timestamp": ts,
+                  "sign": sign,
+                  "Accept": "application/json",
+                  "Origin": "https://azurpromilia.manjuu.com",
+                  "Referer": "https://azurpromilia.manjuu.com/",
+              },
+          )
+          with urllib.request.urlopen(req, timeout=30) as resp:
+              api_raw = resp.read()
+              report.append("\n## live download info API")
+              report.append("HTTP=" + str(resp.status))
+              report.append(api_raw.decode("utf-8", "replace"))
+          payload = json.loads(api_raw)
+          data = payload.get("data") or {}
+          launcher = data.get("nativeLauncherDownloadUrl")
+          if not launcher:
+              raise RuntimeError("nativeLauncherDownloadUrl missing from official API")
+          report.append("OFFICIAL_LAUNCHER_URL=" + launcher)
+
+          installer_req = urllib.request.Request(launcher, headers=ua)
+          h = hashlib.sha256()
+          total = 0
+          with urllib.request.urlopen(installer_req, timeout=180) as resp:
+              report.append("INSTALLER_FINAL_URL=" + resp.geturl())
+              with open("probe/current-installer.exe", "wb") as f:
+                  while True:
+                      chunk = resp.read(1024 * 1024)
+                      if not chunk:
+                          break
+                      f.write(chunk)
+                      h.update(chunk)
+                      total += len(chunk)
+          report.append("INSTALLER_BYTES=" + str(total))
+          report.append("INSTALLER_SHA256=" + h.hexdigest())
+
           pathlib.Path("probe/report.txt").write_text("\n".join(report) + "\n", encoding="utf-8")
           print("\n".join(report))
           PY
