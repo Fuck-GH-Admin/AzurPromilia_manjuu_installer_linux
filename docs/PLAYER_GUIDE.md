@@ -23,18 +23,10 @@
 - Linux x86-64。当前实测环境为 Ubuntu 26.04.1；其他发行版未逐一验证。
 - Python 3。
 - 64 位 Wine。Wine 10.0 + 当前 SC000 样本已验证。
-- Manjuu 官方 SC000 Windows 安装器 EXE。请从官方渠道自行获取；本项目不分发游戏文件或原版安装器。
 - 足够的磁盘空间和稳定网络。
 - Steam 与 Proton：只在你希望通过 Steam/Proton 启动游戏时需要。
 
-**不需要**安装 Go、Node.js 或 Electron，前提是使用 Release 中的预编译 Linux amd64 程序。Go 只在从源码构建时需要；Node.js 只用于开发检查，不是玩家运行时依赖。
-
-已验证的安装器样本：
-
-- 文件名：AzurPromilia_manjuu_installer_1.0.1.1_35_SC000_202610282107.exe
-- SHA-256：cf4b1f6233af2f2cb2d1c0de12f54d07606c3c84c829390b6caccfb2d0d1f04b
-
-更新的官方安装器可能改变内部封装；如果引导失败，请提交安装器版本和 SHA-256，不要改用 Yostar 安装器。
+**不需要**安装 Go、Node.js、Electron，也不需要自己寻找 Windows 安装器，前提是使用 Release 中的预编译 Linux amd64 程序。Go 只在从源码构建时需要。
 
 ## 3. 下载并解压项目
 
@@ -73,17 +65,31 @@ chmod +x ./azurpromilia
 
 如果尚无公开 Release，可临时从 [Actions 构建记录](https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux/actions/workflows/build.yml) 选择最新成功的 main 分支构建，下载 artifact azurpromilia-linux。解压 artifact 后，先运行 `sha256sum -c PACKAGE_SHA256SUMS`，再解压其中的 `azurpromilia-linux-amd64.tar.gz`。Actions artifact 有保留期限。也可以按本文最后的“从源码构建”自行编译。
 
-## 4. 获取官方 SC000 安装器
+## 4. 官方 SC000 启动器自动获取
 
-将你从 Manjuu 官方渠道取得的 Windows SC000 安装器放在本机，例如：
+普通玩家**不需要自己寻找或下载 Windows 启动器**。
 
-~~~text
-$HOME/Downloads/AzurPromilia_manjuu_installer.exe
+第一次执行需要官方元数据的命令时，程序会访问 Manjuu 官网使用的生产下载接口，获取当前 `SC000` PC 启动器 URL，将它下载到用户缓存目录并验证结构。后续运行会复用已经验证的缓存。
+
+如果官网发现接口暂时不可用，程序会使用项目内置的最后一个已验证官方来源作为兜底。目前维护的兜底版本是：
+
+- SC000 启动器版本：`1.0.2.2`
+- 大小：`190835304` bytes
+- SHA-256：`0a1d1b97947838146c7b8f3f0d27dbba79e60372d043f60cd5401f2979531282`
+
+常见 Linux 环境中缓存位于 `$XDG_CACHE_HOME/azurpromilia/SC000`；未设置 `XDG_CACHE_HOME` 时通常是 `~/.cache/azurpromilia/SC000`。第一次自动下载约需额外 182 MiB 网络流量。
+
+自动下载的 EXE **不会被安装**。程序只读取其中的启动器参数，并通过 Wine 使用官方 Electron/N-API 运行时请求匿名包清单。
+
+如自动获取失败，或需要测试指定版本，可手动覆盖：
+
+~~~bash
+./azurpromilia info \
+  --installer /path/to/AzurPromilia_manjuu_installer.exe \
+  --root "$HOME/Games/AzurPromilia"
 ~~~
 
-下载器会从这个 EXE 中读取原版启动器携带的参数，并通过 Wine 运行其 Electron/N-API 组件，向官方接口发起匿名请求，取得当前包清单。
-
-这一步不会安装 Windows 启动器，也不会下载游戏资源。游戏账号登录仍由游戏客户端处理。
+只有实时官网发现、已有有效缓存和内置兜底都不可用时，普通流程才需要 `--installer`。
 
 ## 5. 查看服务器信息
 
@@ -91,11 +97,8 @@ $HOME/Downloads/AzurPromilia_manjuu_installer.exe
 
 ~~~bash
 GAME_DIR="$HOME/Games/AzurPromilia"
-INSTALLER="$HOME/Downloads/AzurPromilia_manjuu_installer.exe"
 
-./azurpromilia info \
-  --installer "$INSTALLER" \
-  --root "$GAME_DIR"
+./azurpromilia info --root "$GAME_DIR"
 ~~~
 
 首次运行会调用 tools/bootstrap.py，需要 Python 3 和 Wine。官方元数据会缓存到游戏目录的 .azurpromilia/packageconfig.json，每次工作流默认刷新。
@@ -115,10 +118,8 @@ INSTALLER="$HOME/Downloads/AzurPromilia_manjuu_installer.exe"
 
 ~~~bash
 GAME_DIR="$HOME/Games/AzurPromilia"
-INSTALLER="$HOME/Downloads/AzurPromilia_manjuu_installer.exe"
 
 ./azurpromilia install \
-  --installer "$INSTALLER" \
   --root "$GAME_DIR" \
   --workers 4
 ~~~
@@ -147,7 +148,6 @@ SLICE 模式的当前样本包含 752 个分片，合并 ZIP 为 75,145,275,761 
 
 ~~~bash
 ./azurpromilia repair \
-  --installer "$HOME/Downloads/AzurPromilia_manjuu_installer.exe" \
   --root "$HOME/Games/AzurPromilia" \
   --workers 4
 ~~~
@@ -202,7 +202,7 @@ CGO_ENABLED=0 go build -trimpath -o ./azurpromilia ./cmd/azurpromilia
 ./azurpromilia help
 ~~~
 
-运行时仍需 Python 3、Wine 和官方 SC000 安装器。请保留仓库中的 tools/ 目录与二进制相对位置。
+运行时仍需 Python 3 和 Wine。官方 SC000 启动器会自动获取并缓存；如需手动覆盖可使用 `--installer`。请保留仓库中的 tools/ 目录与二进制相对位置。
 
 ## 12. 问题反馈
 
@@ -210,7 +210,7 @@ CGO_ENABLED=0 go build -trimpath -o ./azurpromilia ./cmd/azurpromilia
 
 - Linux 发行版和 CPU 架构；
 - Wine 版本；
-- 使用的官方 SC000 安装器版本及 SHA-256；
+- 若使用了 `--installer` 手动覆盖，请提供该安装器版本及 SHA-256；
 - 完整命令（可删除用户名和私人路径）；
 - 完整错误日志与失败阶段。
 
@@ -229,5 +229,3 @@ CGO_ENABLED=0 go build -trimpath -o ./azurpromilia ./cmd/azurpromilia
 - 用于个人学习、实验、教育、公共研究和非营利项目。
 
 商业用途不被许可。再分发时请同时保留许可证条款。完整法律文本见仓库根目录的 [LICENSE](../LICENSE)。
-
-该许可证限制商业用途，因此项目属于源码可用（source-available）的非商业软件，而不是 OSI 定义下的开源软件。
