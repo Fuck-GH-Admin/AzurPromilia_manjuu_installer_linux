@@ -167,9 +167,11 @@ direct ./azurpromilia download \
 
 不要上传原始 `packageconfig.json`、`app_config.dat`、`config.json`、`secretKey`、账号 token、Cookie 或任何个人设备标识。
 
-## 9. Proton
+## 9. Proton（仅提供手动配置说明）
 
-资源安装和校验完成后，可用独立脚本启动游戏。本机 SC000 实测使用 `dwproton-11.0-16`、原生 Wayland 和独立 CompatData 前缀。[启动步骤和配置模板](PROTON_SETUP.md)
+下载器不启动游戏、不安装 Proton、不修改 Steam，也不创建 CompatData。资源安装和 `verify` 完成后，用户可按自己的 Steam/Proton 环境手动添加游戏入口。
+
+本机 SC000 的已验证参数、Steam 设置步骤和可复制的启动选项示例见 [Proton 手动配置参考](PROTON_SETUP.md) 与 [steam-launch-options.example](../tools/steam-launch-options.example)。游戏客户端首次进入后还需要约 16.13 GB 的额外资源更新空间。
 
 ## 10. 本机实测记录（2026-11-25）
 
