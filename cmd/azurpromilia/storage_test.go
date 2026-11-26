@@ -42,6 +42,14 @@ func TestCheckAvailableSpace(t *testing.T) {
 	}
 }
 
+func TestPreflightFilesWithReserveRejectsOverflowBeforeDispatch(t *testing.T) {
+	root := t.TempDir()
+	entries := []Entry{{Name: "asset.bin", Size: 2, MD5: md5Of([]byte("ok"))}}
+	if _, _, err := preflightFilesWithReserve(root, entries, maxInt64-1, "SLICE download + ZIP merge"); err == nil {
+		t.Fatal("accepted overflowing download plus archive reserve")
+	}
+}
+
 func TestPreflightFilesCountsOnlyMissingOrInvalidResources(t *testing.T) {
 	root := t.TempDir()
 	good := []byte("good")
