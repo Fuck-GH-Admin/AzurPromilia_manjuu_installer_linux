@@ -330,3 +330,31 @@ func TestMergeWritesAndVerifiesDeclaredArchive(t *testing.T) {
 		t.Fatal("merged archive did not match declared size and MD5")
 	}
 }
+
+func TestVerifiedRegularFile(t *testing.T) {
+	root := t.TempDir()
+	data := []byte("verified archive")
+	entry := Entry{Name: "archive.zip", Size: int64(len(data)), MD5: md5Of(data)}
+	path := filepath.Join(root, entry.Name)
+
+	ready, err := verifiedRegularFile(path, entry)
+	if err != nil || ready {
+		t.Fatalf("missing archive: ready=%v err=%v", ready, err)
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	ready, err = verifiedRegularFile(path, entry)
+	if err != nil || !ready {
+		t.Fatalf("valid archive: ready=%v err=%v", ready, err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := verifiedRegularFile(path, entry); err == nil {
+		t.Fatal("directory accepted as a verified archive")
+	}
+}
