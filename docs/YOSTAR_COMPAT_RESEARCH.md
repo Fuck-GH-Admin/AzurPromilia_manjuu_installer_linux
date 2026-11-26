@@ -1,10 +1,10 @@
 # Yostar 日本启动器兼容性调查
 
-> 状态：初步静态调查已完成；协议层尚未确认。  
+ > 状态：未来兼容计划，当前暂缓；不开发适配器、不运行自动探测。已有静态证据仅作后续参考。  
 > 样本来源：日本官方 `https://azurpromilia.jp/PCdownload` 页面解析出的 Yostar 官方下载地址。  
 > 当前样本 SHA-256：`dde29b4fa4a6eabfb664838c807460e65746f590f1a51754a33d976763bb1e3f`
 
-## 1. 为什么值得研究
+## 1. 未来为什么值得研究
 
 当前 Manjuu / SC000 Linux 下载器已经把下载、Range、MD5、SLICE/REALITY、preload、update 等核心能力拆成了相对独立的 Go 逻辑。
 
@@ -92,7 +92,7 @@ NSIS 中可以直接解出完整 Electron/Chromium 运行组件，包括：
 
 但外层 NSIS 数据是压缩的，所以这**不能证明 Yostar 使用不同协议**。真正有价值的目标是解出的 `app.asar`、`launcher-installer.exe` 和 `app-32.7z`。
 
-## 5. 下一轮静态调查
+## 5. 恢复该方向时的静态调查清单
 
 下一步只回答这些问题：
 
@@ -126,4 +126,4 @@ preload / update / repair
 
 只有当 Yostar 的游戏下载协议本身与 SC000 完全不同，才考虑独立 backend。
 
-当前证据已经足够支持继续调查，但还不足以开始大规模重构。
+当前主线优先完成 Manjuu / SC000 的 SLICE 全量安装、预下载和跨版本升级验收。Yostar 方向暂时冻结；未来恢复时先按本清单做静态分析，不直接开始大规模重构。
