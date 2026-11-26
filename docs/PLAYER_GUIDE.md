@@ -46,6 +46,7 @@
 azurpromilia-<version>-linux-amd64/
 ├── azurpromilia
 ├── README.md
+├── LICENSE
 ├── SHA256SUMS
 ├── docs/
 │   ├── PLAYER_GUIDE.md
@@ -214,3 +215,19 @@ CGO_ENABLED=0 go build -trimpath -o ./azurpromilia ./cmd/azurpromilia
 - 完整错误日志与失败阶段。
 
 不要直接上传原始 packageconfig.json、安装器内部配置、账号凭据或包含临时签名参数的请求记录。
+
+
+## 13. 许可证
+
+本项目使用 **PolyForm Noncommercial License 1.0.0**。
+
+你可以为了非商业目的：
+
+- 使用和研究代码；
+- 修改、fork 和继续开发；
+- 公开和再分发原版或修改版；
+- 用于个人学习、实验、教育、公共研究和非营利项目。
+
+商业用途不被许可。再分发时请同时保留许可证条款。完整法律文本见仓库根目录的 [LICENSE](../LICENSE)。
+
+该许可证限制商业用途，因此项目属于源码可用（source-available）的非商业软件，而不是 OSI 定义下的开源软件。

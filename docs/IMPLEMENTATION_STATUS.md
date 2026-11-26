@@ -189,4 +189,4 @@ GitHub Actions 验证记录：
 - 新增 Release workflow：推送 `vX.Y.Z` 标签，或在 Actions 手动输入版本标签，可构建 Linux amd64 压缩包并创建 GitHub Release。带连字符的版本标签自动标记为 prerelease。该 workflow 已提交，但尚未实际发布第一个 Release。
 - Build workflow 现会在 Actions artifact 中提供 `azurpromilia-linux-amd64.tar.gz` 和 `PACKAGE_SHA256SUMS`，压缩包内包含 CLI、tools、docs 和 README。
 - 首个完整玩家包构建（Actions run ID：`45788177480`，workflow run #241，head `0e596fa`）通过 Go race tests、Go vet、Python/Node 检查、amd64/arm64 构建及 Artifact 上传。Artifact ID：`15101446387`，有效期至 2027-02-24；后续构建以 Actions 页面最新成功结果为准。
-- 仓库尚未添加 LICENSE；代码再分发和二次使用许可仍待维护者明确。
+- 仓库已采用 PolyForm Noncommercial License 1.0.0：允许非商业使用、修改、fork 和再分发，禁止商业用途；Actions / Release 玩家包同时携带 LICENSE。

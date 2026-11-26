@@ -88,4 +88,10 @@ CGO_ENABLED=0 go build -trimpath -o ./azurpromilia ./cmd/azurpromilia
 
 ## License
 
-仓库目前尚未提供 LICENSE 文件，代码再分发和二次使用的许可范围尚未声明。
+本项目采用 [PolyForm Noncommercial License 1.0.0](LICENSE)。
+
+允许为了**非商业目的**使用、研究、修改、fork 和再分发本项目，包括个人学习、研究、实验、教育和非营利用途；再分发时需要保留许可证条款。
+
+**商业用途不被许可。** 不得将本项目或基于它的衍生版本用于商业产品、收费服务或其他商业目的。
+
+这个许可证允许别人继续开发和公开自己的非商业修改版，但因为它限制商业用途，所以严格来说属于 source-available / 非商业源码开放许可，而不是 OSI 定义下的开源许可证。

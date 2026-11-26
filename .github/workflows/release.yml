@@ -70,6 +70,7 @@ jobs:
           mkdir -p "dist/$package/docs" "dist/$package/tools"
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o "dist/$package/azurpromilia" ./cmd/azurpromilia
           cp README.md "dist/$package/README.md"
+          cp LICENSE "dist/$package/LICENSE"
           cp -r docs/. "dist/$package/docs/"
           cp tools/bootstrap.py tools/fetch_packageconfig.cjs tools/steam-launch-options.example "dist/$package/tools/"
           chmod 0755 "dist/$package/azurpromilia"
@@ -98,7 +99,8 @@ jobs:
             - Manual Steam / Proton setup reached the game.
 
             SLICE full installation and cross-version preload/update are not yet fully validated.
-            Read docs/PLAYER_GUIDE.md in the archive before use.
+            Licensed under PolyForm Noncommercial License 1.0.0. Commercial use is not permitted.
+            Read docs/PLAYER_GUIDE.md and LICENSE in the archive before use.
           files: |
             dist/azurpromilia-${{ steps.meta.outputs.tag }}-linux-amd64.tar.gz
             dist/SHA256SUMS

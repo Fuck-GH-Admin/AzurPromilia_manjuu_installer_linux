@@ -29,6 +29,7 @@ jobs:
           cp -r tools dist/tools
           cp -r docs dist/docs
           cp README.md dist/README.md
+          cp LICENSE dist/LICENSE
           ./dist/azurpromilia-linux-amd64 help
           cd dist && sha256sum azurpromilia-linux-* > SHA256SUMS
           cd ..
@@ -36,6 +37,7 @@ jobs:
           mkdir -p "$package/docs" "$package/tools"
           cp dist/azurpromilia-linux-amd64 "$package/azurpromilia"
           cp README.md "$package/README.md"
+          cp LICENSE "$package/LICENSE"
           cp -r docs/. "$package/docs/"
           cp tools/bootstrap.py tools/fetch_packageconfig.cjs tools/steam-launch-options.example "$package/tools/"
           chmod 0755 "$package/azurpromilia"
