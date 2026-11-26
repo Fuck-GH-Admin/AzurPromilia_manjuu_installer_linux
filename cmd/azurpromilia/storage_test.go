@@ -8,6 +8,31 @@ import (
 	"testing"
 )
 
+func TestCombinedSpaceRequirementIncludesFutureArchive(t *testing.T) {
+	const archiveBytes int64 = 75145275761
+	required, err := combinedSpaceRequirement(archiveBytes, archiveBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want int64 = 150290551522
+	if required != want {
+		t.Fatalf("combined requirement = %d, want %d", required, want)
+	}
+	available := uint64(94.98 * float64(1<<30))
+	if err := checkAvailableSpace(uint64(required), available, "SLICE download + ZIP merge"); err == nil {
+		t.Fatal("accepted a disk budget that cannot hold both slices and the merged ZIP")
+	}
+}
+
+func TestCombinedSpaceRequirementRejectsNegativeAndOverflow(t *testing.T) {
+	if _, err := combinedSpaceRequirement(1, -1); err == nil {
+		t.Fatal("accepted a negative reserve")
+	}
+	if _, err := combinedSpaceRequirement(maxInt64-1, 2); err == nil {
+		t.Fatal("accepted an overflowing combined requirement")
+	}
+}
+
 func TestCheckAvailableSpace(t *testing.T) {
 	if err := checkAvailableSpace(5, 5, "test"); err != nil {
 		t.Fatalf("exactly sufficient space rejected: %v", err)
