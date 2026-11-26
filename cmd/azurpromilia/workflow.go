@@ -76,7 +76,7 @@ func runWorkflow(command string, args []string) error {
 	}
 	switch command {
 	case "info":
-		return printPackageInfo(response)
+		return printPackageInfo(os.Stdout, response)
 	case "install":
 		return installRelease(ctx, abs, state, *installer, response, *mode, *workers)
 	case "update":
@@ -624,9 +624,22 @@ func verifyExtractedEntries(root string, entries []ExtractedEntry) error {
 	return nil
 }
 
-func printPackageInfo(response Response) error {
+func printPackageInfo(w io.Writer, response Response) error {
 	r := response.Data.Released
-	fmt.Printf("Released: %s (%s)\n", releaseVersion(r), r.Name)
+	var gameConfig, launchInfo map[string]any
+	_ = json.Unmarshal(response.Data.GameConfig, &gameConfig)
+	_ = json.Unmarshal(response.Data.LaunchInfo, &launchInfo)
+	folder, entry := r.GameFolderName, r.LaunchEntry
+	if folder == "" {
+		folder, _ = gameConfig["gameFolderName"].(string)
+	}
+	if entry == "" {
+		entry, _ = launchInfo["launchEntry"].(string)
+		if entry == "" {
+			entry, _ = gameConfig["launchEntry"].(string)
+		}
+	}
+	fmt.Fprintf(w, "Released: %s (%s)\n", releaseVersion(r), r.Name)
 	mode := response.Data.DownloadMode
 	if mode == 0 {
 		mode = 1
@@ -635,32 +648,26 @@ func printPackageInfo(response Response) error {
 	if mode == 2 {
 		modeName = "reality"
 	}
-	fmt.Printf("Download mode: %d (%s)\n", mode, modeName)
-	fmt.Printf("Game folder: %s\nGame entry: %s\n", r.GameFolderName, r.LaunchEntry)
+	fmt.Fprintf(w, "Download mode: %d (%s)\n", mode, modeName)
+	fmt.Fprintf(w, "Game folder: %s\nGame entry: %s\n", folder, entry)
 	for _, p := range r.Packages {
-		fmt.Printf("Package type %d: %d bytes, %s, CDN hosts=%d\n", p.Type, p.Size, p.MD5, len(packageCDNs(r, p)))
+		fmt.Fprintf(w, "Package type %d: %d bytes, %s, CDN hosts=%d\n", p.Type, p.Size, p.MD5, len(packageCDNs(r, p)))
 	}
 	if v := releaseVersion(response.Data.Preload); v != "" {
-		fmt.Printf("Preload: %s (%s)\n", v, response.Data.Preload.Name)
+		fmt.Fprintf(w, "Preload: %s (%s)\n", v, response.Data.Preload.Name)
 		for _, p := range response.Data.Preload.Packages {
-			fmt.Printf("Preload package type %d: %d bytes, %s\n", p.Type, p.Size, p.MD5)
+			fmt.Fprintf(w, "Preload package type %d: %d bytes, %s\n", p.Type, p.Size, p.MD5)
 		}
 	} else {
-		fmt.Println("Preload: none")
+		fmt.Fprintln(w, "Preload: none")
 	}
-	if len(response.Data.GameConfig) > 0 && string(response.Data.GameConfig) != "null" {
-		var value any
-		if json.Unmarshal(response.Data.GameConfig, &value) == nil {
-			b, _ := json.MarshalIndent(value, "", "  ")
-			fmt.Printf("Game config metadata: %s\n", b)
-		}
+	if gameConfig != nil {
+		b, _ := json.MarshalIndent(gameConfig, "", "  ")
+		fmt.Fprintf(w, "Game config metadata: %s\n", b)
 	}
-	if len(response.Data.LaunchInfo) > 0 && string(response.Data.LaunchInfo) != "null" {
-		var value any
-		if json.Unmarshal(response.Data.LaunchInfo, &value) == nil {
-			b, _ := json.MarshalIndent(value, "", "  ")
-			fmt.Printf("Launch metadata (for manual Proton setup): %s\n", b)
-		}
+	if launchInfo != nil {
+		b, _ := json.MarshalIndent(launchInfo, "", "  ")
+		fmt.Fprintf(w, "Launch metadata (for manual Proton setup): %s\n", b)
 	}
 	return nil
 }

@@ -580,17 +580,22 @@ func run()error{
  var response Response;if e=json.Unmarshal(raw,&response);e!=nil{return e};if response.Code!=0{return fmt.Errorf("official API error %d",response.Code)}
  release:=response.Data.Released;if *target=="preload"{release=response.Data.Preload}else if *target!="released"{return errors.New("invalid target")}
  version:=strings.Trim(string(release.Version),"\"");if version==""||version=="null"||!regexp.MustCompile("^[a-zA-Z0-9_.-]+$").MatchString(version)||version=="."||version==".."{return errors.New("invalid/missing version")}
- typ,e:=selectPackageType(response.Data.DownloadMode,*mode,release.Packages);if e!=nil{return e};if *slice{typ=1};if *target=="preload"{typ=2};var pkg *Package
- for _,p:=range release.Packages{if p.Type==typ{v:=p;pkg=&v;break}}
- if pkg==nil{return fmt.Errorf("package type %d unavailable; inspect official response",typ)}
+ selectedMode := *mode
+ if *slice { selectedMode = "slice" }
+ if *target == "preload" { selectedMode = "reality" }
+ typ, e := selectPackageType(response.Data.DownloadMode, selectedMode, release.Packages)
+ if e != nil { return e }
+ pkg, e := findPackage(release, typ)
+ if e != nil { return e }
+ sliceMode := typ == 1
  cdn:=pkg.CDN;if len(release.CDN)>0{cdn=release.CDN}
  logf("VERSION %s (%s) package type %d; CDN count %d",version,release.Name,typ,len(cdn))
  indexRoot:=filepath.Join(state,"index");var network atomic.Int64
  index:=Entry{version+"-"+strconv.Itoa(typ),pkg.URL,pkg.MD5,pkg.Size}
  if e=download(ctx,indexRoot,index,cdn,&network);e!=nil{return e};raw,e=os.ReadFile(filepath.Join(indexRoot,index.Name));if e!=nil{return e}
- plain,e:=decrypt(raw,key,iv);if e!=nil{return e};m,e=parseIndex(plain,*slice);if e!=nil{return e};m.Version=version;m.CDN=cdn
+ plain,e:=decrypt(raw,key,iv);if e!=nil{return e};m,e=parseIndex(plain,sliceMode);if e!=nil{return e};m.Version=version;m.CDN=cdn
  if *probe{var chosen *Entry;for _,f:=range m.Files{if f.Size>0&&(chosen==nil||f.Size<chosen.Size){v:=f;chosen=&v}};if chosen==nil{return errors.New("no nonempty resources")};if chosen.Size>64<<20{return errors.New("smallest resource exceeds 64 MiB probe limit")};logf("LIVE PROBE: %s, %d bytes",chosen.Name,chosen.Size);if e=download(ctx,filepath.Join(state,"probe"),*chosen,cdn,&network);e!=nil{return e};logf("LIVE PROBE OK: official index and resource verified");return nil}
- work:=abs;if *target=="preload"{work=filepath.Join(abs,"_pre_download",version);manifestPath=filepath.Join(state,"preload-"+version+".json")};if *slice{work=filepath.Join(state,"slices",version)}
+ work:=abs;if *target=="preload"{work=filepath.Join(abs,"_pre_download",version);manifestPath=filepath.Join(state,"preload-"+version+".json")};if sliceMode{work=filepath.Join(state,"slices",version)}
  if e=runFiles(ctx,work,m,*workers,false);e!=nil{return e}
  if m.Archive!=nil{out:=filepath.Join(state,"archives",version+".zip");if e=merge(work,m,out);e!=nil{return e};logf("ZIP verified: %s",out);if !*noExtract{dest:=abs;if *target=="preload"{dest=filepath.Join(abs,"_pre_download",version)};if e=extractZIP(out,dest);e!=nil{return e}}}else{for _,d:=range m.Directories{p,e:=safe(work,d);if e!=nil{return e};if e=os.MkdirAll(p,0755);e!=nil{return e}}}
  if e=writeJSON(manifestPath,m);e!=nil{return e};logf("COMPLETE %s | %s",version,manifestPath);return nil
