@@ -64,6 +64,7 @@ func requireFreeSpace(path string, required int64, operation string) error {
 	return nil
 }
 
+// combinedSpaceRequirement includes bytes that must remain available for a later stage.
 func combinedSpaceRequirement(downloadBytes, reserveBytes int64) (int64, error) {
 	if downloadBytes < 0 || reserveBytes < 0 {
 		return 0, fmt.Errorf("negative disk-space requirement: download=%d reserve=%d", downloadBytes, reserveBytes)
@@ -74,13 +75,14 @@ func combinedSpaceRequirement(downloadBytes, reserveBytes int64) (int64, error) 
 	return downloadBytes + reserveBytes, nil
 }
 
-// preflightFiles hashes existing files once, then estimates the additional bytes
-// needed for every missing or invalid resource. The returned map lets workers
-// skip a second hash of files already proven valid.
+// preflightFiles performs the ordinary download preflight without a later-stage reserve.
 func preflightFiles(root string, files []Entry) (map[string]bool, int64, error) {
 	return preflightFilesWithReserve(root, files, 0, "download")
 }
 
+// preflightFilesWithReserve hashes existing files once, estimates missing resources,
+// and checks those bytes together with storage reserved for the next pipeline stage.
+// The returned map lets workers skip a second hash of files already proven valid.
 func preflightFilesWithReserve(root string, files []Entry, reserveBytes int64, operation string) (map[string]bool, int64, error) {
 	if reserveBytes < 0 {
 		return nil, 0, fmt.Errorf("invalid negative reserve for %s: %d", operation, reserveBytes)
