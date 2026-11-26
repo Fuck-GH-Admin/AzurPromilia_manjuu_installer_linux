@@ -307,6 +307,13 @@ send:
 }
 
 func runFiles(ctx context.Context, root string, m Manifest, workers int, onlyVerify bool) error {
+	return runFilesWithReserve(ctx, root, m, workers, onlyVerify, 0, "download")
+}
+
+func runFilesWithReserve(ctx context.Context, root string, m Manifest, workers int, onlyVerify bool, reserveBytes int64, operation string) error {
+	if reserveBytes < 0 {
+		return fmt.Errorf("invalid negative reserve for %s: %d", operation, reserveBytes)
+	}
 	if workers < 1 || workers > 32 {
 		return errors.New("workers must be 1..32")
 	}
@@ -322,7 +329,7 @@ func runFiles(ctx context.Context, root string, m Manifest, workers int, onlyVer
 	valid := map[string]bool(nil)
 	if !onlyVerify {
 		var err error
-		valid, _, err = preflightFiles(root, m.Files)
+		valid, _, err = preflightFilesWithReserve(root, m.Files, reserveBytes, operation)
 		if err != nil {
 			return err
 		}
@@ -595,8 +602,21 @@ func run()error{
  if e=download(ctx,indexRoot,index,cdn,&network);e!=nil{return e};raw,e=os.ReadFile(filepath.Join(indexRoot,index.Name));if e!=nil{return e}
  plain,e:=decrypt(raw,key,iv);if e!=nil{return e};m,e=parseIndex(plain,sliceMode);if e!=nil{return e};m.Version=version;m.CDN=cdn
  if *probe{var chosen *Entry;for _,f:=range m.Files{if f.Size>0&&(chosen==nil||f.Size<chosen.Size){v:=f;chosen=&v}};if chosen==nil{return errors.New("no nonempty resources")};if chosen.Size>64<<20{return errors.New("smallest resource exceeds 64 MiB probe limit")};logf("LIVE PROBE: %s, %d bytes",chosen.Name,chosen.Size);if e=download(ctx,filepath.Join(state,"probe"),*chosen,cdn,&network);e!=nil{return e};logf("LIVE PROBE OK: official index and resource verified");return nil}
- work:=abs;if *target=="preload"{work=filepath.Join(abs,"_pre_download",version);manifestPath=filepath.Join(state,"preload-"+version+".json")};if sliceMode{work=filepath.Join(state,"slices",version)}
- if e=runFiles(ctx,work,m,*workers,false);e!=nil{return e}
- if m.Archive!=nil{out:=filepath.Join(state,"archives",version+".zip");if e=merge(work,m,out);e!=nil{return e};logf("ZIP verified: %s",out);if !*noExtract{dest:=abs;if *target=="preload"{dest=filepath.Join(abs,"_pre_download",version)};if e=extractZIP(out,dest);e!=nil{return e}}}else{for _,d:=range m.Directories{p,e:=safe(work,d);if e!=nil{return e};if e=os.MkdirAll(p,0755);e!=nil{return e}}}
+ work:=abs;if *target=="preload"{work=filepath.Join(abs,"_pre_download",version);manifestPath=filepath.Join(state,"preload-"+version+".json")}
+ if m.Archive!=nil {
+  if !sliceMode { return errors.New("slice archive metadata selected with a non-slice package") }
+  work=filepath.Join(state,"slices",version)
+  out:=filepath.Join(state,"archives",version+".zip")
+  archiveReady,checkErr:=verifiedRegularFile(out,*m.Archive);if checkErr!=nil{return checkErr}
+  if !archiveReady {
+   if e=runFilesWithReserve(ctx,work,m,*workers,false,m.Archive.Size,"SLICE download + ZIP merge");e!=nil{return e}
+   if e=merge(work,m,out);e!=nil{return e}
+  } else { logf("ZIP already verified; reusing %s",out) }
+  logf("ZIP verified: %s",out)
+  if !*noExtract { dest:=abs;if *target=="preload"{dest=filepath.Join(abs,"_pre_download",version)};if e=extractZIP(out,dest);e!=nil{return e} }
+ } else {
+  if e=runFiles(ctx,work,m,*workers,false);e!=nil{return e}
+  for _,d:=range m.Directories{p,e:=safe(work,d);if e!=nil{return e};if e=os.MkdirAll(p,0755);e!=nil{return e}}
+ }
  if e=writeJSON(manifestPath,m);e!=nil{return e};logf("COMPLETE %s | %s",version,manifestPath);return nil
 }
