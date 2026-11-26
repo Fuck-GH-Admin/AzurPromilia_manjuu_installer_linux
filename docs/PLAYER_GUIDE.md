@@ -70,7 +70,7 @@ chmod +x ./azurpromilia
 ./azurpromilia help
 ~~~
 
-如果尚无公开 Release，可临时从 [Actions 构建记录](https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux/actions/workflows/build.yml) 选择最新成功构建，下载 artifact azurpromilia-linux。解压 artifact 后，先运行 `sha256sum -c PACKAGE_SHA256SUMS`，再解压其中的 `azurpromilia-linux-amd64.tar.gz`。Actions artifact 有保留期限。也可以按本文最后的“从源码构建”自行编译。
+如果尚无公开 Release，可临时从 [Actions 构建记录](https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux/actions/workflows/build.yml) 选择最新成功的 main 分支构建，下载 artifact azurpromilia-linux。解压 artifact 后，先运行 `sha256sum -c PACKAGE_SHA256SUMS`，再解压其中的 `azurpromilia-linux-amd64.tar.gz`。Actions artifact 有保留期限。也可以按本文最后的“从源码构建”自行编译。
 
 ## 4. 获取官方 SC000 安装器
 
