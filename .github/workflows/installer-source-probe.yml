@@ -176,14 +176,12 @@ jobs:
           }), encoding="utf-8")
           PY
           go build -o probe/azurpromilia ./cmd/azurpromilia
-          printf '{"code":1,"msg":"expected integration stop"}
-' > probe/dummy-packageconfig.json
+          echo '{"code":1,"msg":"expected integration stop"}' > probe/dummy-packageconfig.json
           set +e
           output="$(./probe/azurpromilia download --packageconfig probe/dummy-packageconfig.json --root probe/game 2>&1)"
           rc=$?
           set -e
-          printf '%s
-' "$output"
+          echo "$output"
           test "$rc" -ne 0
           grep -q 'INSTALLER cache hit' <<<"$output"
           grep -q 'official API error 1' <<<"$output"
