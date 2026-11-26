@@ -18,7 +18,7 @@ func TestCombinedSpaceRequirementIncludesFutureArchive(t *testing.T) {
 	if required != want {
 		t.Fatalf("combined requirement = %d, want %d", required, want)
 	}
-	available := uint64(94.98 * float64(1<<30))
+	available := uint64(94*(1<<30) + 98*(1<<30)/100)
 	if err := checkAvailableSpace(uint64(required), available, "SLICE download + ZIP merge"); err == nil {
 		t.Fatal("accepted a disk budget that cannot hold both slices and the merged ZIP")
 	}
