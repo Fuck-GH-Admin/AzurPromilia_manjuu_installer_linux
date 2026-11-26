@@ -1,9 +1,6 @@
 name: Probe official SC000 installer source
 
 on:
-  push:
-    branches:
-      - feature/builtin-installer-fallback-20261126
   workflow_dispatch:
 
 permissions:
