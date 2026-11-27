@@ -7,7 +7,6 @@ import (
  "context"
  "crypto/aes"
  "crypto/cipher"
- "crypto/md5"
  "encoding/base64"
  "encoding/hex"
  "encoding/json"
@@ -100,7 +99,7 @@ func reservedGamePath(name string) bool {
 func verify(p string,e Entry)bool{
  f,err:=os.Open(p);if err!=nil{return false};defer f.Close()
  st,err:=f.Stat();if err!=nil||!st.Mode().IsRegular()||st.Size()!=e.Size{return false}
- h:=md5.New();_,err=io.Copy(h,f);return err==nil&&strings.EqualFold(hex.EncodeToString(h.Sum(nil)),e.MD5)
+ return verifyEntryHash(f,e.MD5)
 }
 func getURLs(cdn []string,remote string)([]string,error){
  u,err:=url.Parse(remote);if err!=nil{return nil,err}
@@ -120,7 +119,7 @@ func downloadAfterPreflight(ctx context.Context, root string, e Entry, cdn []str
 }
 
 func downloadFile(ctx context.Context,root string,e Entry,cdn []string,network *atomic.Int64,checkExisting bool)error{
- p,err:=safe(root,e.Name);if err!=nil{return err};if !validMD5(e.MD5)||e.Size<0||e.Size>=maxInt64{return errors.New("invalid file checksum or size")}
+ p,err:=safe(root,e.Name);if err!=nil{return err};if !validEntryChecksum(e.MD5)||e.Size<0||e.Size>=maxInt64{return errors.New("invalid file checksum or size")}
  if st, statErr := os.Lstat(p); statErr == nil && !st.Mode().IsRegular() { return fmt.Errorf("download destination is not a regular file: %s", p) } else if statErr != nil && !os.IsNotExist(statErr) { return statErr }; if checkExisting && verify(p,e){return nil}
  if err=os.MkdirAll(filepath.Dir(p),0755);err!=nil{return err}
  part:=p+".part";if st,err:=os.Lstat(part);err==nil&&!st.Mode().IsRegular(){return fmt.Errorf("unsafe partial file %s",part)}
@@ -160,7 +159,7 @@ func downloadFile(ctx context.Context,root string,e Entry,cdn []string,network *
    continue
   }
   if er==nil&&verify(part,e){return os.Rename(part,p)}
-  if er==nil{er=errors.New("MD5 mismatch");_ = os.Remove(part)}
+  if er==nil{er=errors.New("checksum mismatch");_ = os.Remove(part)}
   last=er;debugf("RETRY %s (%d): %v",e.Name,attempt+1,last)
   select{case <-ctx.Done():return ctx.Err();case <-time.After(time.Duration(attempt+1)*time.Second):}
  }

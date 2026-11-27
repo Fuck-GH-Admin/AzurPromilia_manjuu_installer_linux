@@ -90,6 +90,7 @@ func buildMainMenu(path string) ([]menuItem, int) {
 		{Key: "advanced", Label: "高级选项", Description: "默认并发数、安装模式与 Shell Completion"},
 		{Key: "upgrade", Label: "更新工具", Description: "从经过 SHA-256 校验的 GitHub Release 更新 azp"},
 		{Key: "help", Label: "帮助", Description: "显示完整命令帮助"},
+		{Key: "yostar", Label: "日服（实验性）", Description: "独立安装目录；全量安装未验证"},
 		{Key: "quit", Label: "退出", Description: "关闭菜单"},
 	}
 
@@ -442,6 +443,8 @@ func runInteractiveMenu() error {
 				return err
 			}
 			continue
+		case "yostar":
+			if err := runYostarMenu(); err != nil { return err }; continue
 		case "upgrade":
 			return runCLI([]string{"upgrade"})
 		case "install":

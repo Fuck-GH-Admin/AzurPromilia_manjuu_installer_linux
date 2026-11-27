@@ -10,7 +10,7 @@ import (
 
 var completionCommands = []string{
 	"install", "update", "repair", "sync", "verify", "status", "info",
-	"resources", "versions", "preload", "predownload", "path", "upgrade", "completion", "help",
+	"resources", "versions", "preload", "predownload", "path", "upgrade", "completion", "yostar", "help",
 }
 
 func detectShell() (string, error) {
@@ -67,7 +67,7 @@ _azp_complete() {
     local i
     for ((i=1; i<COMP_CWORD; i++)); do
         case "${COMP_WORDS[i]}" in
-            install|update|repair|sync|verify|status|info|resources|versions|preload|predownload|path|upgrade|completion|help)
+            install|update|repair|sync|verify|status|info|resources|versions|preload|predownload|path|upgrade|completion|yostar|help)
                 cmd="${COMP_WORDS[i]}"
                 break
                 ;;
@@ -75,7 +75,7 @@ _azp_complete() {
     done
 
     if [[ -z "$cmd" ]]; then
-        COMPREPLY=( $(compgen -W "install update repair sync verify status info resources versions preload predownload path upgrade completion help -p --path -j --workers -v --verbose -q --quiet --no-color --version -h --help" -- "$cur") )
+        COMPREPLY=( $(compgen -W "install update repair sync verify status info resources versions preload predownload path upgrade completion yostar help -p --path -j --workers -v --verbose -q --quiet --no-color --version -h --help" -- "$cur") )
         return 0
     fi
 
@@ -92,6 +92,9 @@ _azp_complete() {
         status|info|resources|versions)
             COMPREPLY=( $(compgen -W "-p --path -j --workers --installer --packageconfig --python --wine --refresh -v --verbose -q --quiet --no-color -h --help" -- "$cur") )
             ;;
+        yostar)
+            COMPREPLY=( $(compgen -W "info status resources versions install verify repair sync probe path -p --path -j --workers --launcher-version -h --help" -- "$cur") )
+            ;;
         upgrade)
             COMPREPLY=( $(compgen -W "--check --stable --force -v --verbose -q --quiet --no-color -h --help" -- "$cur") )
             ;;
@@ -102,7 +105,7 @@ _azp_complete() {
             COMPREPLY=( $(compgen -d -- "$cur") )
             ;;
         help)
-            COMPREPLY=( $(compgen -W "install update repair sync verify status info resources versions preload predownload path upgrade completion" -- "$cur") )
+            COMPREPLY=( $(compgen -W "install update repair sync verify status info resources versions preload predownload path upgrade completion yostar" -- "$cur") )
             ;;
     esac
 }
@@ -130,6 +133,7 @@ _azp() {
     'path:查看或修改游戏目录'
     'upgrade:更新 azp 工具本身'
     'completion:生成或安装 shell 补全'
+    'yostar:日服实验性下载'
     'help:查看命令帮助'
   )
 
@@ -159,6 +163,9 @@ _azp() {
       ;;
     status|info|resources|versions)
       _arguments '--installer[启动器]:file:_files' '--packageconfig[官方包清单]:file:_files' '--python[Python]:file:_files' '--wine[Wine]:file:_files' '--refresh[刷新元数据]' '-j[并发数]:workers:(2 4 8 16 24 32)' '--workers[并发数]:workers:(2 4 8 16 24 32)'
+      ;;
+    yostar)
+      _arguments '1:action:(info status resources versions install verify repair sync probe path)' '-p:directory:_directories' '--path:directory:_directories' '--workers:workers:(2 4 8 16 24 32)' '--launcher-version:version:'
       ;;
     upgrade)
       _arguments '--check[只检查更新]' '--stable[只使用稳定版]' '--force[即使版本相同也重新安装]'
@@ -198,6 +205,7 @@ func fishCompletionScript() string {
 		fmt.Fprintf(&b, "complete -c %s -n '__fish_seen_subcommand_from upgrade' -l check -d 'Check only'\n", prog)
 		fmt.Fprintf(&b, "complete -c %s -n '__fish_seen_subcommand_from upgrade' -l stable -d 'Stable releases only'\n", prog)
 		fmt.Fprintf(&b, "complete -c %s -n '__fish_seen_subcommand_from upgrade' -l force -d 'Reinstall current release'\n", prog)
+		fmt.Fprintf(&b, "complete -c %s -n '__fish_seen_subcommand_from yostar' -a 'info status resources versions install verify repair sync probe path'\n", prog)
 		fmt.Fprintf(&b, "complete -c %s -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish install'\n", prog)
 	}
 	return b.String()

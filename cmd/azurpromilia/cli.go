@@ -13,6 +13,7 @@ import (
 
 type cliConfig struct {
 	GamePath     string `json:"gamePath"`
+	YostarPath   string `json:"yostarPath,omitempty"`
 	Workers      int    `json:"workers,omitempty"`
 	InstallMode  string `json:"installMode,omitempty"`
 }
@@ -238,6 +239,7 @@ Commands:
   path          Show or set the remembered game directory
   upgrade       Update the azp tool from verified GitHub Releases
   completion    Generate or install shell completion
+  yostar        Japanese server download (experimental; full install unverified)
   help          Show this help or help for one command
 
 Run without a command in a terminal to open the interactive menu.
@@ -457,6 +459,8 @@ Examples:
   %s completion install fish
 
 `, prog, prog, prog, prog, prog)
+	case "yostar":
+		printYostarHelp(w, prog)
 	case "download":
 		fmt.Fprintf(w, `Usage:
   %s download [advanced options]
@@ -539,6 +543,10 @@ func runCLI(args []string) error {
 		printCommandHelp(os.Stdout, prog, commandArgs[0])
 		return nil
 	}
+	if command == "yostar" {
+		if opts.Help { printYostarHelp(os.Stdout, prog); return nil }
+		return runYostarCLI(opts, commandArgs)
+	}
 	if opts.Help {
 		printCommandHelp(os.Stdout, prog, command)
 		return nil
@@ -581,6 +589,7 @@ func runCLI(args []string) error {
 	if gamePath == "" {
 		return fmt.Errorf("no game path configured; first run: %s -p %q %s", prog, "$HOME/Games/AzurPromilia", command)
 	}
+	if err := rejectYostarRoot(gamePath); err != nil { return err }
 	commandArgs = append(commandArgs, "--root", gamePath)
 	if opts.Workers != "" {
 		commandArgs = append(commandArgs, "--workers", opts.Workers)

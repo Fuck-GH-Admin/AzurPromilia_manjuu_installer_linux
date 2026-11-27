@@ -1,6 +1,6 @@
 # Azur Promilia Linux Manager
 
-Manjuu / SC000 官方 PC 客户端的非官方 Linux 下载、安装、校验与修复工具。
+Manjuu / SC000 官方 PC 客户端的非官方 Linux 下载、安装、校验与修复工具；另提供实验性 Yostar 日本服资源下载。
 
 默认会自动从官方来源取得当前 SC000 启动器、获取匿名包清单并从官方 CDN 下载游戏资源。**玩家不需要自己寻找 Windows 安装器，也不需要手动准备 packageconfig。**
 
@@ -20,7 +20,7 @@ Manjuu / SC000 官方 PC 客户端的非官方 Linux 下载、安装、校验与
 
 尚未完成真实环境验收：SLICE 全量安装、Preload、跨版本 Update。
 
-Yostar 日本服当前不支持，相关研究暂缓。
+**Yostar 日本服：实验性 / 全量安装未经验证。** 已通过官方版本、40,299 个文件清单与一个 4 字节 CDN 资源 CRC64 实服探针（2026-11-27，1.0.2）；尚未验证全量安装、真实修复、跨版本更新和游戏启动。
 
 ## 下载
 
@@ -50,7 +50,7 @@ azurpromilia     # 完整命令，继续兼容
 
 `azp` 是指向同一程序的 Linux 符号链接。
 
-运行时需要：
+国服自动元数据引导的运行时需要：
 
 - Python 3；
 - 能运行官方 x86-64 Windows 启动器的 Wine 环境；
@@ -253,6 +253,21 @@ Azur Promilia Linux Manager
 ./azurpromilia install --root "$HOME/Games/AzurPromilia" --workers 4
 ~~~
 
+## Yostar 日本服（实验性 / 未验证全量安装）
+
+日服不需要 Wine、Python 或 Windows 安装器来下载资源。使用独立的日服目录，不覆盖国服配置：
+
+~~~bash
+./azp yostar -p "$HOME/Games/AzurPromilia-JP" status
+./azp yostar probe
+./azp yostar install
+./azp yostar verify
+./azp yostar sync
+./azp yostar --help
+~~~
+
+`yostar resources` / `versions` 显示当前官方正式版，`yostar path` 查看或设置独立目录。主菜单有实验性日服入口。没有完整日服预下载、跨版本更新清理或启动支持；请勿使用唯一的现有游戏目录。详见 [日服研究及验证记录](docs/YOSTAR_JP_DOWNLOAD.md)。
+
 ## 自动获取官方 SC000 启动器
 
 普通玩家**不需要自己寻找或下载 Windows 启动器**。
@@ -319,7 +334,7 @@ CGO_ENABLED=0 go build -trimpath -o ./azurpromilia ./cmd/azurpromilia
 
 源码构建默认生成完整命令名 `azurpromilia`；Release 包额外提供 `azp` 短别名。
 
-运行时仍需 Python 3 和 64 位 Wine。请保留仓库中的 `tools/` 目录。
+国服自动元数据引导仍需 Python 3 和 64 位 Wine；日服资源下载不需要。请保留仓库中的 `tools/` 目录。
 
 ## License
 

@@ -233,3 +233,7 @@ Actions 真实请求得到 HTTP 200 / `code=0`，当前下发：
 - 将该文件作为缓存后，不传 `--installer` 的自动 resolver 成功命中缓存并通过现有 `installerKeys` 结构校验。
 
 临时官网探针仅用于确认这一行为，不进入 main。
+
+## Yostar 日本服实验性支持
+
+已接入独立日服下载子命令与主菜单入口；实服清单与 4 字节 CDN 资源 CRC64 通过，全量安装、修复、启动及跨版本更新未验收。详见 [YOSTAR_JP_DOWNLOAD.md](YOSTAR_JP_DOWNLOAD.md)。
