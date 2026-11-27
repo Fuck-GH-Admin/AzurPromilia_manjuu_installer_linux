@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -80,6 +81,8 @@ func buildMainMenu(path string) ([]menuItem, int) {
 		{Key: "sync", Label: "修复 / Sync", Description: "校验并重新下载缺失或损坏文件", Blocked: blockInstalled},
 		{Key: "predownload", Label: "预下载", Description: "下载下一版本的差异资源（Preview）", Blocked: blockInstalled},
 		{Key: "path", Label: "游戏目录", Description: "查看或修改默认游戏目录"},
+		{Key: "advanced", Label: "高级选项", Description: "默认并发数、安装模式与 Shell Completion"},
+		{Key: "upgrade", Label: "更新工具", Description: "从经过 SHA-256 校验的 GitHub Release 更新 azp"},
 		{Key: "help", Label: "帮助", Description: "显示完整命令帮助"},
 		{Key: "quit", Label: "退出", Description: "关闭菜单"},
 	}
@@ -109,6 +112,9 @@ func renderMainMenu(items []menuItem, selected int, path string) string {
 		} else {
 			b.WriteString(" 本地状态: 未安装\n")
 		}
+	}
+	if cfg, err := loadCLIConfig(); err == nil {
+		fmt.Fprintf(&b, " 默认设置: %d workers · %s\n", preferredWorkers(cfg), preferredInstallMode(cfg))
 	}
 	b.WriteString("\n")
 
@@ -251,6 +257,127 @@ func chooseMainMenu(path string) (string, error) {
 	}
 }
 
+func renderSimpleMenu(title, subtitle string, items []menuItem, selected int) string {
+	var b strings.Builder
+	b.WriteString("\x1b[2J\x1b[H")
+	fmt.Fprintf(&b, "\x1b[1;36m%s\x1b[0m\n", title)
+	if subtitle != "" {
+		fmt.Fprintf(&b, "\x1b[90m%s\x1b[0m\n", subtitle)
+	}
+	b.WriteString("\n")
+	for i, item := range items {
+		pointer := "  "
+		style := ""
+		reset := ""
+		if i == selected {
+			pointer = "› "
+			style = "\x1b[7;1m"
+			reset = "\x1b[0m"
+		}
+		fmt.Fprintf(&b, " %s%s%-18s%s %s\n", pointer, style, item.Label, reset, item.Description)
+	}
+	b.WriteString("\n \x1b[90m↑/↓ 选择   Enter 确认   Esc/q 返回\x1b[0m\n")
+	return b.String()
+}
+
+func chooseSimpleMenu(title, subtitle string, items []menuItem, selected int) (string, error) {
+	if len(items) == 0 {
+		return "", errors.New("menu has no options")
+	}
+	if selected < 0 || selected >= len(items) {
+		selected = 0
+	}
+	original, err := enterMenuTerminal()
+	if err != nil {
+		return "", err
+	}
+	defer leaveMenuTerminal(original)
+	for {
+		fmt.Print(renderSimpleMenu(title, subtitle, items, selected))
+		key, err := readMenuKey()
+		if err != nil {
+			return "", err
+		}
+		switch key {
+		case "up":
+			selected = (selected - 1 + len(items)) % len(items)
+		case "down":
+			selected = (selected + 1) % len(items)
+		case "quit":
+			return "", nil
+		case "enter":
+			return items[selected].Key, nil
+		}
+	}
+}
+
+func runAdvancedMenu() error {
+	for {
+		cfg, err := loadCLIConfig()
+		if err != nil {
+			return err
+		}
+		workers := preferredWorkers(cfg)
+		mode := preferredInstallMode(cfg)
+		action, err := chooseSimpleMenu(
+			"高级选项",
+			"这里保存的是默认值；命令行参数仍可临时覆盖。",
+			[]menuItem{
+				{Key: "workers", Label: "并发下载", Description: fmt.Sprintf("当前 %d workers", workers)},
+				{Key: "mode", Label: "安装包模式", Description: "当前 " + mode},
+				{Key: "completion", Label: "Shell Completion", Description: "为当前 shell 安装命令补全"},
+				{Key: "back", Label: "返回", Description: "回到主菜单"},
+			},
+			0,
+		)
+		if err != nil || action == "" || action == "back" {
+			return err
+		}
+		switch action {
+		case "workers":
+			options := []int{2, 4, 8, 16, 24, 32}
+			items := make([]menuItem, 0, len(options))
+			selected := 0
+			for i, n := range options {
+				items = append(items, menuItem{Key: fmt.Sprintf("%d", n), Label: fmt.Sprintf("%d workers", n), Description: "下载与校验并发数"})
+				if n == workers {
+					selected = i
+				}
+			}
+			choice, err := chooseSimpleMenu("默认并发数", "较高并发不一定更快；默认推荐 4。", items, selected)
+			if err != nil || choice == "" {
+				if err != nil { return err }
+				continue
+			}
+			n, err := strconv.Atoi(choice)
+			if err != nil { return err }
+			if err := setPreferredWorkers(n); err != nil { return err }
+		case "mode":
+			items := []menuItem{
+				{Key: "auto", Label: "auto", Description: "跟随官方 downloadMode（推荐）"},
+				{Key: "reality", Label: "reality", Description: "强制逐文件模式"},
+				{Key: "slice", Label: "slice", Description: "强制分片 ZIP 模式（仍属 Preview）"},
+			}
+			selected := 0
+			for i, item := range items {
+				if item.Key == mode { selected = i }
+			}
+			choice, err := chooseSimpleMenu("默认安装模式", "只影响 install；服务器模式仍建议保持 auto。", items, selected)
+			if err != nil || choice == "" {
+				if err != nil { return err }
+				continue
+			}
+			if err := setPreferredInstallMode(choice); err != nil { return err }
+		case "completion":
+			if err := runCompletionCommand([]string{"install"}); err != nil {
+				return err
+			}
+			fmt.Print("按 Enter 返回高级选项...")
+			_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
+		}
+	}
+}
+
 func promptGamePath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -296,6 +423,13 @@ func runInteractiveMenu() error {
 			}
 			time.Sleep(350 * time.Millisecond)
 			continue
+		case "advanced":
+			if err := runAdvancedMenu(); err != nil {
+				return err
+			}
+			continue
+		case "upgrade":
+			return runCLI([]string{"upgrade"})
 		case "install":
 			if path == "" {
 				if _, err := promptGamePath(); err != nil {
