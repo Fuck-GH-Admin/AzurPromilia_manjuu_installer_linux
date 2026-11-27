@@ -163,7 +163,7 @@ func parseCommonCLIOptions(args []string) (commonCLIOptions, error) {
 		switch {
 		case arg == "-h" || arg == "--help":
 			out.Help = true
-		case arg == "--version" && !commandSeen:
+		case arg == "--version" && !(commandSeen && len(out.Rest) > 0 && out.Rest[0] == "verify"):
 			out.Version = true
 		case arg == "-v" || arg == "--verbose":
 			out.Verbose = true
