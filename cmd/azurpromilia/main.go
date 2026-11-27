@@ -79,7 +79,7 @@ type Manifest struct {
 }
 var client = &http.Client{Transport:&http.Transport{Proxy:http.ProxyFromEnvironment,MaxIdleConns:32,MaxIdleConnsPerHost:16,ResponseHeaderTimeout:30*time.Second,IdleConnTimeout:30*time.Second,DisableCompression:true}}
 var output sync.Mutex
-func logf(f string,a ...any){output.Lock();defer output.Unlock();fmt.Fprintf(os.Stderr,f+"\n",a...)}
+func logf(f string,a ...any){infof(f,a...)}
 func validMD5(s string)bool{b,e:=hex.DecodeString(s);return e==nil&&len(b)==16}
 func safe(root,name string)(string,error){
  if st,e:=os.Lstat(root);e==nil&&st.Mode()&os.ModeSymlink!=0{return "",fmt.Errorf("symlink refused for root: %s",root)}
@@ -155,7 +155,7 @@ func downloadFile(ctx context.Context,root string,e Entry,cdn []string,network *
   if nonRetryable {
    last=er
    if urlIndex+1 >= len(urls) { return fmt.Errorf("%s: %w",e.Name,last) }
-   logf("CDN %s rejected %s: %v; trying next CDN", urls[urlIndex], e.Name, last)
+   debugf("CDN %s rejected %s: %v; trying next CDN", urls[urlIndex], e.Name, last)
    attempt=(urlIndex+1)*3-1
    continue
   }
@@ -271,12 +271,12 @@ func runFileWorkers(ctx context.Context, files []Entry, workers int, stopOnError
 					continue
 				}
 				failed.Add(1)
-				logf("FAIL %s: %v", entry.Name, err)
+				errorf("FAIL %s: %v", entry.Name, err)
 				firstMu.Lock()
 				if first == nil {
 					first = err
 					if stopOnError {
-						logf("STOP: cancelling remaining downloads after first failed file")
+						warnf("STOP: cancelling remaining downloads after first failed file")
 						cancel()
 					}
 				}
@@ -339,19 +339,26 @@ func runFilesWithReserve(ctx context.Context, root string, m Manifest, workers i
 	progressDone := make(chan struct{})
 	go func() {
 		defer close(progressDone)
-		ticker := time.NewTicker(time.Second)
+		interval := progressInterval()
+		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
-		var last int64
+		var lastBytes int64
+		lastAt := time.Now()
 		for {
 			select {
 			case <-stop:
 				return
 			case <-ticker.C:
+				now := time.Now()
 				n := network.Load()
-				logf("PROGRESS %d started, %d verified, %d failed / %d total | %.2f/%.2f GiB | %.2f MiB/s",
-					started.Load(), verified.Load(), failedProgress.Load(), len(m.Files),
-					float64(done.Load())/(1<<30), float64(total)/(1<<30), float64(n-last)/(1<<20))
-				last = n
+				elapsed := now.Sub(lastAt).Seconds()
+				speed := 0.0
+				if elapsed > 0 {
+					speed = float64(n-lastBytes) / elapsed
+				}
+				renderTransferProgress("下载", done.Load(), total, verified.Load(), failedProgress.Load(), int64(len(m.Files)), speed)
+				lastBytes = n
+				lastAt = now
 			}
 		}
 	}()
@@ -372,7 +379,7 @@ func runFilesWithReserve(ctx context.Context, root string, m Manifest, workers i
 				return fmt.Errorf("%s: missing or invalid", entry.Name)
 			}
 		} else if !valid[entry.Name] {
-			logf("FILE %s (%d bytes)", entry.Name, entry.Size)
+			debugf("FILE %s (%d bytes)", entry.Name, entry.Size)
 			if err = downloadAfterPreflight(workCtx, root, entry, m.CDN, &network); err != nil {
 				return err
 			}
@@ -385,7 +392,8 @@ func runFilesWithReserve(ctx context.Context, root string, m Manifest, workers i
 	stats := runFileWorkers(ctx, m.Files, workers, !onlyVerify, process)
 	close(stop)
 	<-progressDone
-	logf("RESULT %d/%d verified, %d failed, %d cancelled; %d bytes transferred",
+	finishTransferProgress("下载", done.Load(), total, verified.Load(), failedProgress.Load(), int64(len(m.Files)), network.Load())
+	debugf("RESULT %d/%d completed, %d failed, %d cancelled; %d bytes transferred",
 		stats.Completed, len(m.Files), stats.Failed, stats.Cancelled, network.Load())
 	if stats.First != nil {
 		return stats.First
@@ -572,7 +580,7 @@ func verifyExtracted(archive, root string) error {
 	return verifyExtractedEntries(root, entries)
 }
 
-func main(){if err:=run();err!=nil{logf("ERROR: %v",err);os.Exit(1)}}
+func main(){if err:=run();err!=nil{errorf("%v",err);os.Exit(1)}}
 func run() error { return runCLI(os.Args[1:]) }
 func runCommand(cmd string, args []string) error {
  if cmd=="install"||cmd=="update"||cmd=="repair"||cmd=="preload"||cmd=="status"||cmd=="info"{return runWorkflow(cmd,args)}
