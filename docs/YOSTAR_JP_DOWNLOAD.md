@@ -41,7 +41,7 @@ See the local test below for larger-resource throughput and interruption. Full i
 
 ## Integration into current manager
 
-Use `azp yostar -p "$HOME/Games/AzurPromilia-JP" status`, then `azp yostar install`, `verify`, `sync`. The JP directory is stored independently in CLI configuration; the main menu exposes an experimental JP entry. No complete JP installation or launch is claimed. The original research-only scripts and sample-acquisition workflow remain on the research branch.
+Use `azp yostar -p "$HOME/Games/AzurPromilia-JP" status`, then `azp yostar install`, `verify`, `sync`. The JP directory is stored independently in CLI configuration; the main menu exposes an experimental JP entry. No complete JP installation or launch is claimed. The original research-only scripts and sample-acquisition workflow are recorded in the [closed research PR](https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux/pull/6).
 
 ## 2026-11-27 本机直连与命令行复测
 
