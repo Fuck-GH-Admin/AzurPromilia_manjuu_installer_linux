@@ -344,7 +344,7 @@ func runPathCommand(args []string) error {
 		return err
 	}
 	if path == "" {
-		return fmt.Errorf("no game path configured; set one with: %s path "$HOME/Games/AzurPromilia"", prog)
+		return fmt.Errorf("no game path configured; set one with: %s path %q", prog, "$HOME/Games/AzurPromilia")
 	}
 	fmt.Println(path)
 	return nil
@@ -410,7 +410,7 @@ func runCLI(args []string) error {
 		}
 	}
 	if gamePath == "" {
-		return fmt.Errorf("no game path configured; first run: %s -p "$HOME/Games/AzurPromilia" %s", prog, command)
+		return fmt.Errorf("no game path configured; first run: %s -p %q %s", prog, "$HOME/Games/AzurPromilia", command)
 	}
 	commandArgs = append(commandArgs, "--root", gamePath)
 	if opts.Workers != "" {
