@@ -81,7 +81,7 @@ func TestPrintPlayerStatusIsConcise(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := b.String()
-	for _, want := range []string{"游戏目录:", "安装状态:", "官方版本:", "更新状态:", "下载模式:", "启动入口:", "预下载:"} {
+	for _, want := range []string{"工具版本:", "游戏目录:", "安装状态:", "官方版本:", "更新状态:", "下载模式:", "启动入口:", "预下载:"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("status missing %q:\n%s", want, out)
 		}
@@ -143,9 +143,16 @@ func TestBuildMainMenuInstalledEnablesMaintenance(t *testing.T) {
 }
 
 func TestRenderMainMenuContainsNavigationHints(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := setPreferredWorkers(8); err != nil {
+		t.Fatal(err)
+	}
+	if err := setPreferredInstallMode("reality"); err != nil {
+		t.Fatal(err)
+	}
 	items, selected := buildMainMenu("")
 	out := renderMainMenu(items, selected, "")
-	for _, want := range []string{"Azur Promilia Linux Manager", "↑/↓", "Enter", "Esc/q", "游戏目录"} {
+	for _, want := range []string{"Azur Promilia Linux Manager", "↑/↓", "Enter", "Esc/q", "游戏目录", "高级选项", "更新工具", "8 workers", "reality"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("menu missing %q:\n%s", want, out)
 		}
