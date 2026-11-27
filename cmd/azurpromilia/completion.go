@@ -10,7 +10,7 @@ import (
 
 var completionCommands = []string{
 	"install", "update", "repair", "sync", "verify", "status", "info",
-	"preload", "predownload", "path", "upgrade", "completion", "help",
+	"resources", "versions", "preload", "predownload", "path", "upgrade", "completion", "help",
 }
 
 func detectShell() (string, error) {
@@ -67,7 +67,7 @@ _azp_complete() {
     local i
     for ((i=1; i<COMP_CWORD; i++)); do
         case "${COMP_WORDS[i]}" in
-            install|update|repair|sync|verify|status|info|preload|predownload|path|upgrade|completion|help)
+            install|update|repair|sync|verify|status|info|resources|versions|preload|predownload|path|upgrade|completion|help)
                 cmd="${COMP_WORDS[i]}"
                 break
                 ;;
@@ -75,7 +75,7 @@ _azp_complete() {
     done
 
     if [[ -z "$cmd" ]]; then
-        COMPREPLY=( $(compgen -W "install update repair sync verify status info preload predownload path upgrade completion help -p --path -j --workers -v --verbose -q --quiet --no-color --version -h --help" -- "$cur") )
+        COMPREPLY=( $(compgen -W "install update repair sync verify status info resources versions preload predownload path upgrade completion help -p --path -j --workers -v --verbose -q --quiet --no-color --version -h --help" -- "$cur") )
         return 0
     fi
 
@@ -89,8 +89,8 @@ _azp_complete() {
         verify)
             COMPREPLY=( $(compgen -W "-p --path -j --workers --target --version --no-extract -v --verbose -q --quiet --no-color -h --help" -- "$cur") )
             ;;
-        status|info)
-            COMPREPLY=( $(compgen -W "-p --path --installer --packageconfig --python --wine --refresh -v --verbose -q --quiet --no-color -h --help" -- "$cur") )
+        status|info|resources|versions)
+            COMPREPLY=( $(compgen -W "-p --path -j --workers --installer --packageconfig --python --wine --refresh -v --verbose -q --quiet --no-color -h --help" -- "$cur") )
             ;;
         upgrade)
             COMPREPLY=( $(compgen -W "--check --stable --force -v --verbose -q --quiet --no-color -h --help" -- "$cur") )
@@ -102,7 +102,7 @@ _azp_complete() {
             COMPREPLY=( $(compgen -d -- "$cur") )
             ;;
         help)
-            COMPREPLY=( $(compgen -W "install update repair sync verify status info preload predownload path upgrade completion" -- "$cur") )
+            COMPREPLY=( $(compgen -W "install update repair sync verify status info resources versions preload predownload path upgrade completion" -- "$cur") )
             ;;
     esac
 }
@@ -123,6 +123,8 @@ _azp() {
     'verify:只校验游戏文件'
     'status:查看玩家状态摘要'
     'info:查看详细官方元数据'
+    'resources:浏览官方版本与资源模式'
+    'versions:resources 的别名'
     'preload:预下载下一版本'
     'predownload:preload 的别名'
     'path:查看或修改游戏目录'
@@ -155,8 +157,8 @@ _azp() {
     verify)
       _arguments '--target[校验目标]:target:(released preload)' '--version[预下载版本]:version:' '--no-extract[跳过解压内容校验]' '-j[并发数]:workers:(2 4 8 16 24 32)' '--workers[并发数]:workers:(2 4 8 16 24 32)'
       ;;
-    status|info)
-      _arguments '--installer[启动器]:file:_files' '--packageconfig[官方包清单]:file:_files' '--python[Python]:file:_files' '--wine[Wine]:file:_files' '--refresh[刷新元数据]'
+    status|info|resources|versions)
+      _arguments '--installer[启动器]:file:_files' '--packageconfig[官方包清单]:file:_files' '--python[Python]:file:_files' '--wine[Wine]:file:_files' '--refresh[刷新元数据]' '-j[并发数]:workers:(2 4 8 16 24 32)' '--workers[并发数]:workers:(2 4 8 16 24 32)'
       ;;
     upgrade)
       _arguments '--check[只检查更新]' '--stable[只使用稳定版]' '--force[即使版本相同也重新安装]'
