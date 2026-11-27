@@ -67,7 +67,7 @@ func TestHelpIsPlayerFacing(t *testing.T) {
 
 func TestCommandAliases(t *testing.T) {
 	cases := map[string]string{
-		"status":      "info",
+		"status":      "status",
 		"sync":        "repair",
 		"predownload": "preload",
 		"verify":      "verify",

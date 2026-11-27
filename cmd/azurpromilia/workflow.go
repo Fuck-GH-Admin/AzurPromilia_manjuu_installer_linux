@@ -77,6 +77,8 @@ func runWorkflow(command string, args []string) error {
 		return err
 	}
 	switch command {
+	case "status":
+		return printPlayerStatus(os.Stdout, abs, state, response)
 	case "info":
 		return printPackageInfo(os.Stdout, response)
 	case "install":

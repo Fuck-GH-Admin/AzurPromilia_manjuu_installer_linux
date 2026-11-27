@@ -31,6 +31,9 @@ jobs:
           cp README.md dist/README.md
           cp LICENSE dist/LICENSE
           ./dist/azurpromilia-linux-amd64 help
+          ./dist/azurpromilia-linux-amd64 --help
+          ./dist/azurpromilia-linux-amd64 > /tmp/azurpromilia-noargs.txt
+          grep -q "Azur Promilia Linux Manager" /tmp/azurpromilia-noargs.txt
           cd dist && sha256sum azurpromilia-linux-* > SHA256SUMS
           cd ..
           package="dist/package/azurpromilia-linux-amd64"

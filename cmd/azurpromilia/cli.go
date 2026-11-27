@@ -136,8 +136,6 @@ func parseCommonCLIOptions(args []string) (commonCLIOptions, error) {
 
 func canonicalCommand(command string) string {
 	switch command {
-	case "status":
-		return "info"
 	case "sync":
 		return "repair"
 	case "predownload":
@@ -164,6 +162,8 @@ Commands:
   predownload   Alias for preload
   path          Show or set the remembered game directory
   help          Show this help or help for one command
+
+Run without a command in a terminal to open the interactive menu.
 
 Global options:
   -p, --path PATH       Game directory; remembered for future commands
@@ -264,12 +264,13 @@ Advanced options:
   --no-extract          Skip archive extraction verification
 
 `, prog)
-	case "info":
+	case "status":
 		fmt.Fprintf(w, `Usage:
   %s status [options]
-  %s info [options]
 
-Show the current official version, download mode, package information and launch metadata.
+Show a concise player-facing status page: install state, local/official versions,
+update availability, download mode, local manifest summary, launch entry,
+pre-download state and free disk space.
 
 Options:
   -p, --path PATH       Game directory; remembered for future commands
@@ -281,7 +282,24 @@ Advanced metadata options:
   --wine FILE
   --refresh
 
-`, prog, prog)
+`, prog)
+	case "info":
+		fmt.Fprintf(w, `Usage:
+  %s info [options]
+
+Show detailed official package, CDN and launch metadata for diagnostics.
+
+Options:
+  -p, --path PATH       Game directory; remembered for future commands
+
+Advanced metadata options:
+  --installer FILE
+  --packageconfig FILE
+  --python FILE
+  --wine FILE
+  --refresh
+
+`, prog)
 	case "preload":
 		fmt.Fprintf(w, `Usage:
   %s preload [options]
@@ -357,12 +375,19 @@ func runCLI(args []string) error {
 		return err
 	}
 	if len(opts.Rest) == 0 {
+		if opts.Help {
+			printTopLevelHelp(os.Stdout, prog)
+			return nil
+		}
 		if opts.Path != "" {
 			path, err := rememberGamePath(opts.Path)
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Game path: %s\n\n", path)
+			fmt.Printf("Game path: %s\n", path)
+		}
+		if terminalAvailable() {
+			return runInteractiveMenu()
 		}
 		printTopLevelHelp(os.Stdout, prog)
 		return nil
@@ -391,7 +416,7 @@ func runCLI(args []string) error {
 
 	canonical := canonicalCommand(command)
 	switch canonical {
-	case "install", "update", "repair", "verify", "info", "preload", "download":
+	case "install", "update", "repair", "verify", "status", "info", "preload", "download":
 	default:
 		printTopLevelHelp(os.Stderr, prog)
 		return fmt.Errorf("unknown command %q", command)
