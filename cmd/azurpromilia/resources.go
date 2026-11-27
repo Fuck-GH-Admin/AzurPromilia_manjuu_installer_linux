@@ -262,8 +262,8 @@ func runPreloadResourceMenu(ctx context.Context, root, state, installer string, 
 }
 
 func runResourceSelector(ctx context.Context, root, state, installer string, response Response, workers int) error {
-	printResourceOverview(os.Stdout, root, state, response)
 	if !terminalAvailable() {
+		printResourceOverview(os.Stdout, root, state, response)
 		return nil
 	}
 
