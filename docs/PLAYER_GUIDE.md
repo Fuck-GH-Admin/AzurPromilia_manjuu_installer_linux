@@ -35,10 +35,11 @@ arm64 上若暂时没有适合官方启动器的运行环境，可先在 amd64 �
 
 下载与你的系统相符的 `linux-amd64` 或 `linux-arm64` 压缩包，以及该版本的 `SHA256SUMS`。[GitHub Releases](https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux/releases)
 
-解压后请保留目录结构，尤其不要把 azurpromilia 单独移动到其他地方：
+解压后请保留目录结构，尤其不要把可执行文件单独移动到其他地方。Release 包同时提供推荐短命令 `azp` 和兼容用完整命令 `azurpromilia`：
 
 ~~~text
 azurpromilia-<version>-linux-<arch>/
+├── azp -> azurpromilia
 ├── azurpromilia
 ├── README.md
 ├── LICENSE
@@ -60,7 +61,7 @@ sha256sum --ignore-missing -c SHA256SUMS
 tar -xzf "$package.tar.gz"
 cd "$package"
 sha256sum -c SHA256SUMS
-./azurpromilia help
+./azp --help
 ~~~
 
 要测试尚未发布的 main 分支，可下载最新成功构建的 `azurpromilia-linux` artifact。解压 artifact 后，先运行 `sha256sum -c PACKAGE_SHA256SUMS`，再解压其中的 `azurpromilia-linux-amd64.tar.gz`。[Actions 构建记录](https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux/actions/workflows/build.yml)
@@ -93,13 +94,19 @@ sha256sum -c SHA256SUMS
 
 ## 5. 查看服务器信息
 
-在解压后的项目目录中运行：
+第一次使用时指定一次游戏目录，程序会记住该路径：
 
 ~~~bash
-GAME_DIR="$HOME/Games/AzurPromilia"
-
-./azurpromilia info --root "$GAME_DIR"
+./azp -p "$HOME/Games/AzurPromilia" status
 ~~~
+
+之后可以直接运行：
+
+~~~bash
+./azp status
+~~~
+
+需要更换目录时可使用 `./azp path /new/path`，或再次传入 `-p/--path`。旧的 `--root` 参数仍兼容。
 
 首次运行会调用 tools/bootstrap.py，需要 Python 3 和 Wine。官方元数据会缓存到游戏目录的 .azurpromilia/packageconfig.json，每次工作流默认刷新。
 
@@ -116,12 +123,16 @@ GAME_DIR="$HOME/Games/AzurPromilia"
 
 先确认目标目录是你准备给本项目使用的目录。不要直接指向一个已有的 Windows 或其他启动器管理的游戏目录。
 
-~~~bash
-GAME_DIR="$HOME/Games/AzurPromilia"
+第一次安装：
 
-./azurpromilia install \
-  --root "$GAME_DIR" \
-  --workers 4
+~~~bash
+./azp -p "$HOME/Games/AzurPromilia" install
+~~~
+
+目录会被记住，后续命令无需重复填写。需要调整并发数时可使用 `-j`：
+
+~~~bash
+./azp install -j 8
 ~~~
 
 默认 --mode auto，会按官方元数据中的 downloadMode 选择包类型。只有确认自己要覆盖服务器默认模式时才使用 --mode reality 或 --mode slice。
@@ -139,7 +150,7 @@ SLICE 模式的当前样本包含 752 个分片，合并 ZIP 为 75,145,275,761 
 安装成功后执行完整校验：
 
 ~~~bash
-./azurpromilia verify --root "$HOME/Games/AzurPromilia"
+./azp verify
 ~~~
 
 当前版本的 REALITY 安装已实测 40,457 个文件全部通过大小和 MD5 校验。
@@ -147,10 +158,10 @@ SLICE 模式的当前样本包含 752 个分片，合并 ZIP 为 75,145,275,761 
 如果同一个服务器版本的游戏文件缺失或损坏，可运行：
 
 ~~~bash
-./azurpromilia repair \
-  --root "$HOME/Games/AzurPromilia" \
-  --workers 4
+./azp sync
 ~~~
+
+`sync` 是 `repair` 的别名；若希望使用原命令，`./azp repair` 完全等价。
 
 Repair 会重新获取当前官方索引，只补齐缺失或损坏的资源。如果服务器已经发布新版本，Repair 会拒绝跨版本修复并提示使用 Update。
 
