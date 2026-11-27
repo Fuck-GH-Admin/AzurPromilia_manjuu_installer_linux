@@ -7,7 +7,6 @@ import (
  "context"
  "crypto/aes"
  "crypto/cipher"
- "crypto/md5"
  "encoding/base64"
  "encoding/hex"
  "encoding/json"
@@ -100,7 +99,7 @@ func reservedGamePath(name string) bool {
 func verify(p string,e Entry)bool{
  f,err:=os.Open(p);if err!=nil{return false};defer f.Close()
  st,err:=f.Stat();if err!=nil||!st.Mode().IsRegular()||st.Size()!=e.Size{return false}
- h:=md5.New();_,err=io.Copy(h,f);return err==nil&&strings.EqualFold(hex.EncodeToString(h.Sum(nil)),e.MD5)
+ return verifyEntryHash(f,e.MD5)
 }
 func getURLs(cdn []string,remote string)([]string,error){
  u,err:=url.Parse(remote);if err!=nil{return nil,err}
@@ -120,7 +119,7 @@ func downloadAfterPreflight(ctx context.Context, root string, e Entry, cdn []str
 }
 
 func downloadFile(ctx context.Context,root string,e Entry,cdn []string,network *atomic.Int64,checkExisting bool)error{
- p,err:=safe(root,e.Name);if err!=nil{return err};if !validMD5(e.MD5)||e.Size<0||e.Size>=maxInt64{return errors.New("invalid file checksum or size")}
+ p,err:=safe(root,e.Name);if err!=nil{return err};if !validEntryChecksum(e.MD5)||e.Size<0||e.Size>=maxInt64{return errors.New("invalid file checksum or size")}
  if st, statErr := os.Lstat(p); statErr == nil && !st.Mode().IsRegular() { return fmt.Errorf("download destination is not a regular file: %s", p) } else if statErr != nil && !os.IsNotExist(statErr) { return statErr }; if checkExisting && verify(p,e){return nil}
  if err=os.MkdirAll(filepath.Dir(p),0755);err!=nil{return err}
  part:=p+".part";if st,err:=os.Lstat(part);err==nil&&!st.Mode().IsRegular(){return fmt.Errorf("unsafe partial file %s",part)}
@@ -160,7 +159,7 @@ func downloadFile(ctx context.Context,root string,e Entry,cdn []string,network *
    continue
   }
   if er==nil&&verify(part,e){return os.Rename(part,p)}
-  if er==nil{er=errors.New("MD5 mismatch");_ = os.Remove(part)}
+  if er==nil{er=errors.New("checksum mismatch");_ = os.Remove(part)}
   last=er;logf("RETRY %s (%d): %v",e.Name,attempt+1,last)
   select{case <-ctx.Done():return ctx.Err();case <-time.After(time.Duration(attempt+1)*time.Second):}
  }
@@ -574,8 +573,8 @@ func verifyExtracted(archive, root string) error {
 
 func main(){if err:=run();err!=nil{logf("ERROR: %v",err);os.Exit(1)}}
 func run()error{
- if len(os.Args)<2{return errors.New("usage: azurpromilia install|update|repair|preload|info|download|verify --help")}
- cmd:=os.Args[1];if cmd=="help"||cmd=="--help"{fmt.Println("azurpromilia install|update|repair|preload|info|download|verify --help");return nil};if cmd=="install"||cmd=="update"||cmd=="repair"||cmd=="preload"||cmd=="info"{return runWorkflow(cmd,os.Args[2:])}
+ if len(os.Args)<2{return errors.New("usage: azurpromilia install|update|repair|preload|info|download|verify|yostar --help")}
+ cmd:=os.Args[1];if cmd=="yostar"{return runYostar(os.Args[2:])};if cmd=="help"||cmd=="--help"{fmt.Println("azurpromilia install|update|repair|preload|info|download|verify|yostar --help");return nil};if cmd=="install"||cmd=="update"||cmd=="repair"||cmd=="preload"||cmd=="info"{return runWorkflow(cmd,os.Args[2:])}
  fs:=flag.NewFlagSet(cmd,flag.ContinueOnError);root:=fs.String("root","AzurPromilia","game directory");pkgPath:=fs.String("packageconfig","","official packageconfig response JSON");exe:=fs.String("installer","","optional SC000 installer EXE override; acquired automatically if omitted");target:=fs.String("target","released","released or preload");workers:=fs.Int("workers",4,"parallel downloads");slice:=fs.Bool("slice",false,"select slice package");noExtract:=fs.Bool("no-extract",false,"do not extract ZIP");probe:=fs.Bool("probe",false,"only fetch official index and one smallest nonempty resource; do not install");versionFlag:=fs.String("version","","preload version for verification");mode:=fs.String("mode","auto","auto, slice or reality");if e:=fs.Parse(os.Args[2:]);e!=nil{if e==flag.ErrHelp{return nil};return e}
  if *workers<1||*workers>32{return errors.New("workers must be 1..32")}
  abs,e:=filepath.Abs(*root);if e!=nil{return e};if e=os.MkdirAll(abs,0755);e!=nil{return e};abs,e=filepath.EvalSymlinks(abs);if e!=nil{return e}
