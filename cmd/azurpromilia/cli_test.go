@@ -21,6 +21,40 @@ func TestParseCommonCLIOptions(t *testing.T) {
 	}
 }
 
+
+func TestGlobalOutputOptionsAndVersion(t *testing.T) {
+	got, err := parseCommonCLIOptions([]string{"--verbose", "--no-color", "--version"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Verbose || !got.NoColor || !got.Version {
+		t.Fatalf("unexpected global options: %+v", got)
+	}
+}
+
+func TestVerifyVersionRemainsCommandOption(t *testing.T) {
+	got, err := parseCommonCLIOptions([]string{"verify", "--target", "preload", "--version", "1.2.3"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Version {
+		t.Fatalf("verify --version was stolen by global parser: %+v", got)
+	}
+	if strings.Join(got.Rest, " ") != "verify --target preload --version 1.2.3" {
+		t.Fatalf("unexpected verify args: %#v", got.Rest)
+	}
+}
+
+func TestGlobalVersionStillWorksAfterOtherCommands(t *testing.T) {
+	got, err := parseCommonCLIOptions([]string{"status", "--version"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Version {
+		t.Fatalf("status --version should still resolve to tool version: %+v", got)
+	}
+}
+
 func TestCLIConfigRoundTrip(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	want := filepath.Join(t.TempDir(), "AzurPromilia")
@@ -49,13 +83,26 @@ func TestCLIConfigRoundTrip(t *testing.T) {
 	if st.Mode().Perm()&0077 != 0 {
 		t.Fatalf("config permissions too broad: %o", st.Mode().Perm())
 	}
+	if err := setPreferredWorkers(8); err != nil {
+		t.Fatal(err)
+	}
+	if err := setPreferredInstallMode("reality"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadCLIConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GamePath != got || preferredWorkers(cfg) != 8 || preferredInstallMode(cfg) != "reality" {
+		t.Fatalf("saved defaults were not preserved: %+v", cfg)
+	}
 }
 
 func TestHelpIsPlayerFacing(t *testing.T) {
 	var b bytes.Buffer
 	printTopLevelHelp(&b, "azp")
 	s := b.String()
-	for _, want := range []string{"azp -p", "install", "status", "sync", "--help"} {
+	for _, want := range []string{"azp -p", "install", "status", "sync", "upgrade", "completion", "--version", "--verbose", "--help"} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("help missing %q:\n%s", want, s)
 		}
