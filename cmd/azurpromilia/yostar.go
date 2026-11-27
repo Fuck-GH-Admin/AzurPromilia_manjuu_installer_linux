@@ -146,7 +146,9 @@ func jpParseManifest(raw jpRawManifest, config jpGameConfig, domains jpDomains) 
     if len(m.CDN)==0{return m,errors.New("no official CDN")}
     seen:=make(map[string]bool,len(raw.File));dirs:=make(map[string]bool)
     for _,f:=range raw.File{
-        name:=f.Path
+        // Official JP paths start with a single slash; the original Node path.join
+        // and CDN path split treat it as game-root-relative. Strip exactly one.
+        name:=strings.TrimPrefix(f.Path,"/")
         low:=strings.ToLower(name)
         if !jpRelative(name)||reservedGamePath(name)||low==jpState||strings.HasPrefix(low,jpState+"/")||strings.HasSuffix(low,".part")||seen[low] {return m,fmt.Errorf("unsafe or duplicate manifest path %q",name)}
         if dirs[low]{return m,fmt.Errorf("file/directory conflict %q",name)}
