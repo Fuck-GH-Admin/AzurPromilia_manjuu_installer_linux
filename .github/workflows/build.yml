@@ -36,12 +36,13 @@ jobs:
           package="dist/package/azurpromilia-linux-amd64"
           mkdir -p "$package/docs" "$package/tools"
           cp dist/azurpromilia-linux-amd64 "$package/azurpromilia"
+          ln -s azurpromilia "$package/azp"
           cp README.md "$package/README.md"
           cp LICENSE "$package/LICENSE"
           cp -r docs/. "$package/docs/"
           cp tools/bootstrap.py tools/fetch_packageconfig.cjs tools/steam-launch-options.example "$package/tools/"
           chmod 0755 "$package/azurpromilia"
-          (cd "$package" && sha256sum azurpromilia > SHA256SUMS)
+          (cd "$package" && sha256sum azurpromilia azp > SHA256SUMS)
           tar -czf dist/azurpromilia-linux-amd64.tar.gz -C dist/package azurpromilia-linux-amd64
           (cd dist && sha256sum azurpromilia-linux-amd64.tar.gz > PACKAGE_SHA256SUMS)
       - uses: actions/upload-artifact@v4
