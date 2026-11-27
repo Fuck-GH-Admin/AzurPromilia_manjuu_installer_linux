@@ -157,12 +157,13 @@ type commonCLIOptions struct {
 
 func parseCommonCLIOptions(args []string) (commonCLIOptions, error) {
 	var out commonCLIOptions
+	commandSeen := false
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
 		case arg == "-h" || arg == "--help":
 			out.Help = true
-		case arg == "--version":
+		case arg == "--version" && !commandSeen:
 			out.Version = true
 		case arg == "-v" || arg == "--verbose":
 			out.Verbose = true
@@ -190,6 +191,9 @@ func parseCommonCLIOptions(args []string) (commonCLIOptions, error) {
 			out.Workers = strings.TrimPrefix(arg, "--workers=")
 		default:
 			out.Rest = append(out.Rest, arg)
+			if !commandSeen && !strings.HasPrefix(arg, "-") {
+				commandSeen = true
+			}
 		}
 	}
 	if out.Workers != "" {
