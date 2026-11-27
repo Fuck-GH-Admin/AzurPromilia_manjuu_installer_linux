@@ -66,7 +66,18 @@ sha256sum -c SHA256SUMS
 
 要测试尚未发布的 main 分支，可下载最新成功构建的 `azurpromilia-linux` artifact。解压 artifact 后，先运行 `sha256sum -c PACKAGE_SHA256SUMS`，再解压其中的 `azurpromilia-linux-amd64.tar.gz`。[Actions 构建记录](https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux/actions/workflows/build.yml)
 
-## 4. 官方 SC000 启动器自动获取
+## 4. 交互菜单
+
+在真实终端里直接运行 `./azp` 会进入交互菜单。使用 ↑/↓ 移动、Enter 确认、Esc 或 q 退出。
+
+菜单会根据本地状态调整可用项：
+
+- 未设置游戏目录时，优先引导设置目录；
+- 尚未安装时允许安装，但更新、校验和修复会提示先安装；
+- 已安装后默认高亮 Status，并开放 Update / Verify / Sync；
+- 脚本、管道或 CI 等非交互环境裸跑时只输出帮助，不进入菜单。
+
+## 5. 官方 SC000 启动器自动获取
 
 普通玩家**不需要自己寻找或下载 Windows 启动器**。
 
@@ -92,7 +103,7 @@ sha256sum -c SHA256SUMS
 
 只有实时官网发现、已有有效缓存和内置兜底都不可用时，普通流程才需要 `--installer`。
 
-## 5. 查看服务器信息
+## 6. 查看服务器信息
 
 第一次使用时指定一次游戏目录，程序会记住该路径：
 
@@ -110,16 +121,22 @@ sha256sum -c SHA256SUMS
 
 首次运行会调用 tools/bootstrap.py，需要 Python 3 和 Wine。官方元数据会缓存到游戏目录的 .azurpromilia/packageconfig.json，每次工作流默认刷新。
 
-检查输出中的：
+Status 默认显示：
 
-- Released 版本；
-- Download mode；
-- Package type；
-- 游戏目录名与游戏入口。
+- 游戏目录和安装状态；
+- 本地版本与官方版本；
+- 是否存在可用更新；
+- 当前官方下载模式；
+- 本地 manifest 的文件数与资源体积；
+- 游戏启动入口是否存在；
+- 官方预下载版本及本地预下载状态；
+- 当前文件系统可用空间。
+
+Status 不会执行全量 MD5 扫描；需要完整检查时使用 `./azp verify`。详细 package/CDN/launch metadata 仍可通过 `./azp info` 查看。
 
 当前已实测的 SC000 版本使用 REALITY / packageType 2。
 
-## 6. 首次下载和安装
+## 7. 首次下载和安装
 
 先确认目标目录是你准备给本项目使用的目录。不要直接指向一个已有的 Windows 或其他启动器管理的游戏目录。
 
@@ -145,7 +162,7 @@ sha256sum -c SHA256SUMS
 
 SLICE 模式的当前样本包含 752 个分片，合并 ZIP 为 75,145,275,761 bytes。空目录安装时，分片下载与 ZIP 合并阶段的峰值至少约 **150.29 GB（140.0 GiB）**，还不包含解压空间。SLICE 全量安装尚未实测通过，不建议手动强制选择它。
 
-## 7. 校验和修复
+## 8. 校验和修复
 
 安装成功后执行完整校验：
 
@@ -165,7 +182,7 @@ SLICE 模式的当前样本包含 752 个分片，合并 ZIP 为 75,145,275,761 
 
 Repair 会重新获取当前官方索引，只补齐缺失或损坏的资源。如果服务器已经发布新版本，Repair 会拒绝跨版本修复并提示使用 Update。
 
-## 8. Steam / Proton 手动配置
+## 9. Steam / Proton 手动配置
 
 下载器不会安装 Proton、创建 CompatData、添加 Steam 快捷方式或启动游戏。完成安装和 Verify 后，请按自己的 Steam 环境手动配置：
 
@@ -179,7 +196,7 @@ Repair 会重新获取当前官方索引，只补齐缺失或损坏的资源。�
 
 完整说明见 [Proton 手动配置参考](PROTON_SETUP.md)。
 
-## 9. 暂不建议用于正式目录的功能
+## 10. 暂不建议用于正式目录的功能
 
 代码中已经实现 preload 和 update，但尚未完成真实版本切换的完整验收。它们涉及新旧版本索引、预下载缓存复用和旧文件清理。
 
@@ -190,7 +207,7 @@ Repair 会重新获取当前官方索引，只补齐缺失或损坏的资源。�
 - 先备份游戏目录和存档（如果存档位于游戏目录之外，也请确认其位置）；
 - 不要手工将 _pre_download 内容覆盖到游戏目录。
 
-## 10. 隐私与安全说明
+## 11. 隐私与安全说明
 
 - packageconfig.json 可能包含临时 CDN URL。不要公开上传或提交到 Git。
 - 不要分享原版安装器中的 app_config.dat、密钥、账号 Cookie、token 或签名请求头。
@@ -198,7 +215,7 @@ Repair 会重新获取当前官方索引，只补齐缺失或损坏的资源。�
 - 本工具不处理账号登录，也不修改游戏反作弊或游戏客户端代码。
 - 只使用官方来源的安装器和游戏资源。
 
-## 11. 从源码构建
+## 12. 从源码构建
 
 如不使用 Release 预编译包，需要 Go 1.22 或更新版本：
 
@@ -215,7 +232,7 @@ CGO_ENABLED=0 go build -trimpath -o ./azurpromilia ./cmd/azurpromilia
 
 运行时仍需 Python 3 和 Wine。官方 SC000 启动器会自动获取并缓存；如需手动覆盖可使用 `--installer`。请保留仓库中的 tools/ 目录与二进制相对位置。
 
-## 12. 问题反馈
+## 13. 问题反馈
 
 提交 Issue 时请附上：
 
@@ -228,7 +245,7 @@ CGO_ENABLED=0 go build -trimpath -o ./azurpromilia ./cmd/azurpromilia
 不要直接上传原始 packageconfig.json、安装器内部配置、账号凭据或包含临时签名参数的请求记录。
 
 
-## 13. 许可证
+## 14. 许可证
 
 本项目使用 **PolyForm Noncommercial License 1.0.0**。
 
