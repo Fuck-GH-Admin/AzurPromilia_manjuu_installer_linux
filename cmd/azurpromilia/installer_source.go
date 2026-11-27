@@ -297,8 +297,13 @@ func downloadInstallerFile(ctx context.Context, client *http.Client, rawURL, tar
 
 	h := sha256.New()
 	var total int64
+	progressTotal := expectedSize
+	if progressTotal <= 0 && resp.ContentLength > 0 {
+		progressTotal = resp.ContentLength
+	}
 	buf := make([]byte, 1024*1024)
-	nextProgress := int64(32 << 20)
+	lastProgressAt := time.Now()
+	lastProgressBytes := int64(0)
 	for {
 		n, readErr := resp.Body.Read(buf)
 		if n > 0 {
@@ -310,9 +315,16 @@ func downloadInstallerFile(ctx context.Context, client *http.Client, rawURL, tar
 				return installerCacheMetadata{}, err
 			}
 			_, _ = h.Write(buf[:n])
-			if total >= nextProgress {
-				logf("INSTALLER download %.1f MiB", float64(total)/(1<<20))
-				nextProgress += 32 << 20
+			now := time.Now()
+			if now.Sub(lastProgressAt) >= progressInterval() {
+				elapsed := now.Sub(lastProgressAt).Seconds()
+				speed := 0.0
+				if elapsed > 0 {
+					speed = float64(total-lastProgressBytes) / elapsed
+				}
+				renderTransferProgress("启动器", total, progressTotal, 0, 0, 1, speed)
+				lastProgressAt = now
+				lastProgressBytes = total
 			}
 		}
 		if readErr == io.EOF {
@@ -344,7 +356,8 @@ func downloadInstallerFile(ctx context.Context, client *http.Client, rawURL, tar
 		return installerCacheMetadata{}, err
 	}
 	removeTmp = false
-	logf("INSTALLER verified: %d bytes SHA256=%s", total, hash)
+	finishTransferProgress("启动器", total, progressTotal, 1, 0, 1, total)
+	debugf("INSTALLER verified: %d bytes SHA256=%s", total, hash)
 	return installerCacheMetadata{
 		URL:       resolved,
 		SHA256:    hash,
@@ -420,9 +433,9 @@ func resolveInstaller(ctx context.Context, requested, state string) (string, err
 			}
 			return cachePath, nil
 		}
-		logf("WARN current official installer could not be cached: %v", downloadErr)
+		warnf("current official installer could not be cached: %v", downloadErr)
 	} else {
-		logf("WARN official installer discovery unavailable: %v", liveErr)
+		warnf("official installer discovery unavailable: %v", liveErr)
 	}
 
 	if cacheValid {
