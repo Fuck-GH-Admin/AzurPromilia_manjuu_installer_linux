@@ -177,7 +177,7 @@ func downloadReleaseAsset(ctx context.Context, asset githubReleaseAsset, dst str
 	if err := f.Sync(); err != nil { return "", err }
 	if err := f.Close(); err != nil { return "", err }
 	ok = true
-	finishTransferProgress("工具更新", n, total, 1, 0, 1, n)
+	finishTransferProgress("工具更新", 1, 0, 1, n, nil)
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 

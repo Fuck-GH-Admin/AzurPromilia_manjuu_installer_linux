@@ -34,3 +34,44 @@ func TestYostarPreviewEntryPoints(t *testing.T) {
  if !found{t.Fatal("missing preview menu")}
  for _,shell:=range []string{"bash","zsh","fish"}{s,e:=completionScript(shell);if e!=nil||!strings.Contains(s,"yostar"){t.Fatalf("missing %s completion",shell)}}
 }
+
+func TestYostarInvalidArgumentsDoNotRememberPath(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	root := t.TempDir()
+	original := filepath.Join(root, "JP")
+	replacement := filepath.Join(root, "JP new")
+	if _, err := rememberYostarPath(original); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"-p", replacement, "status", "--invalid"},
+		{"-p", replacement, "install", "unexpected-argument"},
+		{"-p", replacement, "status", "--launcher-version="},
+		{"path", "--invalid"},
+	} {
+		if err := runCLI(append([]string{"yostar"}, args...)); err == nil {
+			t.Fatalf("accepted invalid arguments %q", args)
+		}
+		cfg, err := loadCLIConfig()
+		if err != nil || cfg.YostarPath != original {
+			t.Fatalf("invalid arguments %q changed JP path to %q, error %v", args, cfg.YostarPath, err)
+		}
+	}
+}
+
+func TestYostarVerifyWithoutManifestDoesNotCreateGameDirectory(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	root := filepath.Join(t.TempDir(), "uninstalled JP")
+	err := runCLI([]string{"yostar", "--quiet", "--root", root, "verify"})
+	defer configureOutput(false, false, false)
+	if err == nil || !strings.Contains(err.Error(), "yostar install") {
+		t.Fatalf("expected missing installation guidance, got %v", err)
+	}
+	if _, err := os.Stat(root); !os.IsNotExist(err) {
+		t.Fatalf("verify created game directory or could not stat it: %v", err)
+	}
+	cfg, err := loadCLIConfig()
+	if err != nil || cfg.YostarPath != root {
+		t.Fatalf("valid explicit path was not remembered: %+v, error %v", cfg, err)
+	}
+}

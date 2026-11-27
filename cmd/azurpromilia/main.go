@@ -334,6 +334,10 @@ func runFilesWithReserve(ctx context.Context, root string, m Manifest, workers i
 		}
 	}
 
+	label := "下载"
+	if onlyVerify {
+		label = "校验"
+	}
 	stop := make(chan struct{})
 	progressDone := make(chan struct{})
 	go func() {
@@ -355,7 +359,7 @@ func runFilesWithReserve(ctx context.Context, root string, m Manifest, workers i
 				if elapsed > 0 {
 					speed = float64(n-lastBytes) / elapsed
 				}
-				renderTransferProgress("下载", done.Load(), total, verified.Load(), failedProgress.Load(), int64(len(m.Files)), speed)
+				renderTransferProgress(label, done.Load(), total, verified.Load(), failedProgress.Load(), int64(len(m.Files)), speed)
 				lastBytes = n
 				lastAt = now
 			}
@@ -391,7 +395,7 @@ func runFilesWithReserve(ctx context.Context, root string, m Manifest, workers i
 	stats := runFileWorkers(ctx, m.Files, workers, !onlyVerify, process)
 	close(stop)
 	<-progressDone
-	finishTransferProgress("下载", done.Load(), total, verified.Load(), failedProgress.Load(), int64(len(m.Files)), network.Load())
+	finishTransferProgress(label, stats.Completed, stats.Failed, int64(len(m.Files)), network.Load(), stats.First)
 	debugf("RESULT %d/%d completed, %d failed, %d cancelled; %d bytes transferred",
 		stats.Completed, len(m.Files), stats.Failed, stats.Cancelled, network.Load())
 	if stats.First != nil {

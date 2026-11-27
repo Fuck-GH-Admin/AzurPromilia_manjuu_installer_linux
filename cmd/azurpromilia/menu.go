@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -109,9 +110,9 @@ func buildMainMenu(path string) ([]menuItem, int) {
 func renderMainMenu(items []menuItem, selected int, path string) string {
 	var b strings.Builder
 	b.WriteString("\x1b[2J\x1b[H")
-	b.WriteString("\x1b[1;36mAzur Promilia Linux Manager\x1b[0m\n\n")
+	fmt.Fprintf(&b, "%s\n\n", styledText("Azur Promilia Linux Manager", "\x1b[1;36m"))
 	if path == "" {
-		b.WriteString(" 游戏目录: \x1b[33m未设置\x1b[0m\n")
+		fmt.Fprintf(&b, " 游戏目录: %s\n", styledText("未设置", "\x1b[33m"))
 	} else {
 		b.WriteString(" 游戏目录: " + path + "\n")
 		if installed, version := localMenuState(path); installed {
@@ -124,29 +125,26 @@ func renderMainMenu(items []menuItem, selected int, path string) string {
 		fmt.Fprintf(&b, " 默认设置: %d workers · %s\n", preferredWorkers(cfg), preferredInstallMode(cfg))
 	}
 	if hint := cachedGameUpdateHint(path); hint != "" {
-		fmt.Fprintf(&b, " \x1b[1;33m⚠ %s\x1b[0m\n", hint)
+		fmt.Fprintf(&b, " %s\n", styledText("⚠ "+hint, "\x1b[1;33m"))
 	}
 	b.WriteString("\n")
 
 	for i, item := range items {
 		pointer := "  "
 		style := ""
-		reset := ""
 		if i == selected {
 			pointer = "› "
 			style = "\x1b[7;1m"
-			reset = "\x1b[0m"
 		} else if item.Blocked != "" {
 			style = "\x1b[90m"
-			reset = "\x1b[0m"
 		}
-		fmt.Fprintf(&b, " %s%s%-14s%s %s", pointer, style, item.Label, reset, item.Description)
+		fmt.Fprintf(&b, " %s%s %s", pointer, styledText(fmt.Sprintf("%-14s", item.Label), style), item.Description)
 		if item.Blocked != "" {
-			fmt.Fprintf(&b, "  \x1b[33m[%s]\x1b[0m", item.Blocked)
+			fmt.Fprintf(&b, "  %s", styledText("["+item.Blocked+"]", "\x1b[33m"))
 		}
 		b.WriteByte('\n')
 	}
-	b.WriteString("\n \x1b[90m↑/↓ 选择   Enter 确认   Esc/q 退出\x1b[0m\n")
+	fmt.Fprintf(&b, "\n %s\n", styledText("↑/↓ 选择   Enter 确认   Esc/q 退出", "\x1b[90m"))
 	return b.String()
 }
 
@@ -173,8 +171,8 @@ func enterMenuTerminal() (*syscall.Termios, error) {
 	raw := original
 	raw.Lflag &^= syscall.ECHO | syscall.ICANON | syscall.ISIG
 	raw.Iflag &^= syscall.ICRNL | syscall.IXON
-	raw.Cc[syscall.VMIN] = 0
-	raw.Cc[syscall.VTIME] = 1
+	raw.Cc[syscall.VMIN] = 1
+	raw.Cc[syscall.VTIME] = 0
 	if err := ioctlTermios(fd, syscall.TCSETS, &raw); err != nil {
 		return nil, err
 	}
@@ -186,46 +184,54 @@ func leaveMenuTerminal(original *syscall.Termios) {
 	if original != nil {
 		_ = ioctlTermios(os.Stdin.Fd(), syscall.TCSETS, original)
 	}
-	fmt.Print("\x1b[0m\x1b[?25h\x1b[2J\x1b[H")
+	fmt.Print("\x1b[?25h\x1b[2J\x1b[H")
 }
 
 func readMenuKey() (string, error) {
-	buf := make([]byte, 8)
+	var key [1]byte
 	for {
-		n, err := os.Stdin.Read(buf)
-		if err != nil {
+		if _, err := io.ReadFull(os.Stdin, key[:]); err != nil {
 			return "", err
 		}
-		if n == 0 {
-			continue
-		}
-		switch buf[0] {
-		case 3:
+		switch key[0] {
+		case 3, 'q', 'Q':
 			return "quit", nil
 		case '\r', '\n':
 			return "enter", nil
-		case 'q', 'Q':
-			return "quit", nil
 		case 27:
-			seq := append([]byte(nil), buf[:n]...)
-			if len(seq) == 1 {
-				more := make([]byte, 4)
-				m, readErr := os.Stdin.Read(more)
-				if readErr != nil {
-					return "", readErr
-				}
-				seq = append(seq, more[:m]...)
-			}
-			if len(seq) >= 3 && seq[1] == '[' {
-				switch seq[2] {
-				case 'A':
-					return "up", nil
-				case 'B':
-					return "down", nil
-				}
-			}
-			return "quit", nil
+			return readMenuEscape()
 		}
+	}
+}
+
+func readMenuEscape() (string, error) {
+	fd := os.Stdin.Fd()
+	var blocking syscall.Termios
+	if err := ioctlTermios(fd, syscall.TCGETS, &blocking); err != nil {
+		return "", err
+	}
+	// Only wait briefly for bytes following Esc, which can also be a key by itself.
+	timed := blocking
+	timed.Cc[syscall.VMIN] = 0
+	timed.Cc[syscall.VTIME] = 1
+	if err := ioctlTermios(fd, syscall.TCSETS, &timed); err != nil {
+		return "", err
+	}
+	var sequence [2]byte
+	_, readErr := io.ReadFull(os.Stdin, sequence[:])
+	if err := ioctlTermios(fd, syscall.TCSETS, &blocking); err != nil {
+		return "", err
+	}
+	if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
+		return "", readErr
+	}
+	switch sequence {
+	case [2]byte{'[', 'A'}, [2]byte{'O', 'A'}:
+		return "up", nil
+	case [2]byte{'[', 'B'}, [2]byte{'O', 'B'}:
+		return "down", nil
+	default:
+		return "quit", nil
 	}
 }
 
@@ -241,7 +247,7 @@ func chooseMainMenu(path string) (string, error) {
 	for {
 		fmt.Print(renderMainMenu(items, selected, path))
 		if message != "" {
-			fmt.Printf("\n \x1b[33m%s\x1b[0m\n", message)
+			fmt.Printf("\n %s\n", styledText(message, "\x1b[33m"))
 		}
 		key, err := readMenuKey()
 		if err != nil {
@@ -270,23 +276,21 @@ func chooseMainMenu(path string) (string, error) {
 func renderSimpleMenu(title, subtitle string, items []menuItem, selected int) string {
 	var b strings.Builder
 	b.WriteString("\x1b[2J\x1b[H")
-	fmt.Fprintf(&b, "\x1b[1;36m%s\x1b[0m\n", title)
+	fmt.Fprintln(&b, styledText(title, "\x1b[1;36m"))
 	if subtitle != "" {
-		fmt.Fprintf(&b, "\x1b[90m%s\x1b[0m\n", subtitle)
+		fmt.Fprintln(&b, styledText(subtitle, "\x1b[90m"))
 	}
 	b.WriteString("\n")
 	for i, item := range items {
 		pointer := "  "
 		style := ""
-		reset := ""
 		if i == selected {
 			pointer = "› "
 			style = "\x1b[7;1m"
-			reset = "\x1b[0m"
 		}
-		fmt.Fprintf(&b, " %s%s%-18s%s %s\n", pointer, style, item.Label, reset, item.Description)
+		fmt.Fprintf(&b, " %s%s %s\n", pointer, styledText(fmt.Sprintf("%-18s", item.Label), style), item.Description)
 	}
-	b.WriteString("\n \x1b[90m↑/↓ 选择   Enter 确认   Esc/q 返回\x1b[0m\n")
+	fmt.Fprintf(&b, "\n %s\n", styledText("↑/↓ 选择   Enter 确认   Esc/q 返回", "\x1b[90m"))
 	return b.String()
 }
 
@@ -356,12 +360,18 @@ func runAdvancedMenu() error {
 			}
 			choice, err := chooseSimpleMenu("默认并发数", "较高并发不一定更快；默认推荐 4。", items, selected)
 			if err != nil || choice == "" {
-				if err != nil { return err }
+				if err != nil {
+					return err
+				}
 				continue
 			}
 			n, err := strconv.Atoi(choice)
-			if err != nil { return err }
-			if err := setPreferredWorkers(n); err != nil { return err }
+			if err != nil {
+				return err
+			}
+			if err := setPreferredWorkers(n); err != nil {
+				return err
+			}
 		case "mode":
 			items := []menuItem{
 				{Key: "auto", Label: "auto", Description: "跟随官方 downloadMode（推荐）"},
@@ -370,14 +380,20 @@ func runAdvancedMenu() error {
 			}
 			selected := 0
 			for i, item := range items {
-				if item.Key == mode { selected = i }
+				if item.Key == mode {
+					selected = i
+				}
 			}
 			choice, err := chooseSimpleMenu("默认安装模式", "只影响 install；服务器模式仍建议保持 auto。", items, selected)
 			if err != nil || choice == "" {
-				if err != nil { return err }
+				if err != nil {
+					return err
+				}
 				continue
 			}
-			if err := setPreferredInstallMode(choice); err != nil { return err }
+			if err := setPreferredInstallMode(choice); err != nil {
+				return err
+			}
 		case "completion":
 			if err := runCompletionCommand([]string{"install"}); err != nil {
 				return err
@@ -439,23 +455,28 @@ func runInteractiveMenu() error {
 			}
 			continue
 		case "resources":
-			if err := runCLI([]string{"resources"}); err != nil {
+			if err := runMenuCommand(action); err != nil {
 				return err
 			}
 			continue
 		case "yostar":
-			if err := runYostarMenu(); err != nil { return err }; continue
-		case "upgrade":
-			return runCLI([]string{"upgrade"})
+			if err := runYostarMenu(); err != nil {
+				return err
+			}
+			continue
 		case "install":
 			if path == "" {
 				if _, err := promptGamePath(); err != nil {
 					return err
 				}
 			}
-			return runCLI([]string{"install"})
+			return runMenuCommand(action)
 		default:
-			return runCLI([]string{action})
+			return runMenuCommand(action)
 		}
 	}
+}
+
+func runMenuCommand(args ...string) error {
+	return runCLIWithOptions(commonCLIOptions{Rest: args, Quiet: isQuietOutput()})
 }

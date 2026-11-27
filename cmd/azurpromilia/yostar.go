@@ -6,7 +6,6 @@ import (
     "encoding/hex"
     "encoding/json"
     "errors"
-    "flag"
     "fmt"
     "hash/crc64"
     "io"
@@ -183,23 +182,16 @@ func jpDiscover(ctx context.Context, launcherVersion string) (Manifest,jpGameCon
     m,e=jpParseManifest(raw,config,domains)
     return m,config,e
 }
-func runYostar(args []string) error {
-    if len(args)==0{return errors.New("usage: azurpromilia yostar info|install|repair|verify|probe --help")}
-    cmd:=args[0]
-    if cmd=="help"||cmd=="--help"{fmt.Println("azurpromilia yostar info|install|repair|verify|probe --help");return nil}
-    if cmd=="status"||cmd=="resources"{cmd="info"}
-    if cmd!="info"&&cmd!="install"&&cmd!="repair"&&cmd!="verify"&&cmd!="probe"{return errors.New("unknown Yostar command")}
-    fs:=flag.NewFlagSet("yostar "+cmd,flag.ContinueOnError)
-    root:=fs.String("root","AzurPromilia-JP","separate Japanese game directory")
-    workers:=fs.Int("workers",4,"parallel downloads")
-    version:=fs.String("launcher-version",jpVersion,"official launcher version")
-    if e:=fs.Parse(args[1:]);e!=nil{if e==flag.ErrHelp{return nil};return e}
-    if *workers<1||*workers>32||*version==""||fs.NArg()!=0{return errors.New("invalid workers, launcher version, or arguments")}
+func runYostar(cmd, root string, workers int, version string) error {
     ctx,cancel:=signal.NotifyContext(context.Background(),os.Interrupt);defer cancel()
-    abs,e:=filepath.Abs(*root);if e!=nil{return e}
+    abs,e:=filepath.Abs(root);if e!=nil{return e}
     if cmd!="info"{
         if st,e:=os.Lstat(abs);e==nil&&st.Mode()&os.ModeSymlink!=0{return errors.New("symlink game root refused")}
-        if e=os.MkdirAll(abs,0755);e!=nil{return e}
+        if cmd != "verify" {
+            if e = os.MkdirAll(abs, 0755); e != nil {
+                return e
+            }
+        }
         for _,p:=range []string{".azurpromilia","_index","_pre_download"}{
             if _,e=os.Lstat(filepath.Join(abs,p));e==nil{return errors.New("SC000 state found; use a separate JP directory")}else if !os.IsNotExist(e){return e}
         }
@@ -208,16 +200,22 @@ func runYostar(args []string) error {
     manifestPath,e:=safe(abs,jpState+"/manifest.json");if e!=nil{return e}
     var m Manifest
     if cmd=="verify" {
-        b,e:=os.ReadFile(manifestPath);if e!=nil{return e}
+        b, e := os.ReadFile(manifestPath)
+        if os.IsNotExist(e) {
+            return fmt.Errorf("日服目录 %q 缺少完整安装清单，请运行 %s yostar install", abs, cliProgramName())
+        }
+        if e != nil {
+            return e
+        }
         if e=json.Unmarshal(b,&m);e!=nil{return e}
         // Local manifests must pass the same path and algorithm constraints.
         for _,f:=range m.Files{
             if !jpRelative(f.Name)||reservedGamePath(f.Name)||strings.HasPrefix(strings.ToLower(f.Name),jpState)||!strings.HasPrefix(f.MD5,"crc64:")||!validEntryChecksum(f.MD5){return errors.New("invalid saved JP manifest")}
         }
         if len(m.Files)==0{return errors.New("empty saved JP manifest")}
-        if e:=runFiles(ctx,abs,m,*workers,true);e!=nil{return e}; fmt.Printf("→ 如需修复，请运行 %s yostar sync\n",cliProgramName()); return nil
+        if e:=runFiles(ctx,abs,m,workers,true);e!=nil{return e}; fmt.Printf("→ 如需修复，请运行 %s yostar sync\n",cliProgramName()); return nil
     }
-    m,config,e:=jpDiscover(ctx,*version);if e!=nil{return e}
+    m,config,e:=jpDiscover(ctx,version);if e!=nil{return e}
     var total int64
     for _,f:=range m.Files{if f.Size>maxInt64-total{return errors.New("total size overflow")};total+=f.Size}
     logf("YOSTAR JP version=%s files=%d bytes=%d CDN=%d launch=%s",config.Version,len(m.Files),total,len(m.CDN),config.LaunchExe)
@@ -240,7 +238,7 @@ func runYostar(args []string) error {
     // delete old/unknown files until cross-version behavior is live-validated.
     // Claim the directory before the first resource write, including interrupted installs.
     if e=os.MkdirAll(state,0755);e!=nil{return e}
-    if e=runFiles(ctx,abs,m,*workers,false);e!=nil{return e}
+    if e=runFiles(ctx,abs,m,workers,false);e!=nil{return e}
     f,e:=os.CreateTemp(state,"manifest-*.tmp");if e!=nil{return e}
     defer os.Remove(f.Name())
     e=json.NewEncoder(f).Encode(m)

@@ -504,7 +504,6 @@ func runPathCommand(args []string) error {
 }
 
 func runCLI(args []string) error {
-	prog := cliProgramName()
 	opts, err := parseCommonCLIOptions(args)
 	if err != nil {
 		return err
@@ -512,6 +511,11 @@ func runCLI(args []string) error {
 	if err := configureOutput(opts.Verbose, opts.Quiet, opts.NoColor); err != nil {
 		return err
 	}
+	return runCLIWithOptions(opts)
+}
+
+func runCLIWithOptions(opts commonCLIOptions) error {
+	prog := cliProgramName()
 	if opts.Version {
 		fmt.Printf("Azur Promilia Linux Manager %s\n", toolVersion)
 		return nil

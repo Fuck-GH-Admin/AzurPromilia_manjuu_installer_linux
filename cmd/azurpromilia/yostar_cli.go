@@ -3,6 +3,7 @@ package main
 import (
  "bufio"
  "errors"
+ "flag"
  "fmt"
  "io"
  "os"
@@ -32,26 +33,84 @@ func rememberYostarPath(p string) (string,error) {
  for _,n:=range []string{".azurpromilia","_index","_pre_download"}{if _,e:=os.Lstat(filepath.Join(abs,n));e==nil{return "",errors.New("SC000 state found; use another JP directory")}else if !os.IsNotExist(e){return "",e}}
  cfg.YostarPath=abs;return abs,saveCLIConfig(cfg)
 }
-func runYostarCLI(opts commonCLIOptions,args []string) error {
- if len(args)==0||args[0]=="help"{printYostarHelp(os.Stdout,cliProgramName());return nil}
- cmd:=args[0]
- switch cmd {case "sync":cmd="repair";case "versions":cmd="resources"}
- switch cmd {case "path","info","status","resources","install","repair","verify","probe":default:return fmt.Errorf("unknown Yostar command %q",cmd)}
- cfg,e:=loadCLIConfig();if e!=nil{return e}
- p:=cfg.YostarPath
- if cmd=="path" {
-  if len(args)>2 || (len(args)==2&&opts.Path!=""){return errors.New("usage: azp yostar path [DIRECTORY]")}
-  if len(args)==2{opts.Path=args[1]}
-  if opts.Path!=""{p,e=rememberYostarPath(opts.Path);if e!=nil{return e}}
-  if p==""{return errors.New("no JP game directory configured; use azp yostar path DIRECTORY")}
-  fmt.Println(p);return nil
- }
- if opts.Path!=""{p,e=rememberYostarPath(opts.Path);if e!=nil{return e}}
- if p==""{home,e:=os.UserHomeDir();if e!=nil{return e};p=filepath.Join(home,"Games","AzurPromilia-JP")}
- if e=jpDistinctPath(p,cfg.GamePath);e!=nil{return e}
- workers:=opts.Workers;if workers==""{workers=strconv.Itoa(preferredWorkers(cfg))}
- if !opts.Quiet {fmt.Fprintln(os.Stderr,"WARNING: Yostar JP is experimental; full installation and launch unverified.")}
- return runYostar(append(append([]string{cmd},args[1:]...),"--root",p,"--workers",workers))
+func runYostarCLI(opts commonCLIOptions, args []string) error {
+	if len(args) == 0 || args[0] == "help" {
+		printYostarHelp(os.Stdout, cliProgramName())
+		return nil
+	}
+	cmd := args[0]
+	switch cmd {
+	case "sync":
+		cmd = "repair"
+	case "status", "versions", "resources":
+		cmd = "info"
+	}
+	switch cmd {
+	case "path", "info", "install", "repair", "verify", "probe":
+	default:
+		return fmt.Errorf("unknown Yostar command %q", cmd)
+	}
+
+	cfg, err := loadCLIConfig()
+	if err != nil {
+		return err
+	}
+	path := cfg.YostarPath
+	if cmd == "path" {
+		if len(args) > 2 || (len(args) == 2 && (opts.Path != "" || strings.HasPrefix(args[1], "-"))) {
+			return errors.New("usage: azp yostar path [DIRECTORY]")
+		}
+		if len(args) == 2 {
+			opts.Path = args[1]
+		}
+		if opts.Path != "" {
+			path, err = rememberYostarPath(opts.Path)
+			if err != nil {
+				return err
+			}
+		}
+		if path == "" {
+			return errors.New("no JP game directory configured; use azp yostar path DIRECTORY")
+		}
+		fmt.Println(path)
+		return nil
+	}
+
+	flags := flag.NewFlagSet("yostar "+cmd, flag.ContinueOnError)
+	version := flags.String("launcher-version", jpVersion, "official launcher version")
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*version) == "" || flags.NArg() != 0 {
+		return errors.New("invalid launcher version or arguments")
+	}
+	workers := preferredWorkers(cfg)
+	if opts.Workers != "" {
+		workers, err = strconv.Atoi(opts.Workers)
+		if err != nil || workers < 1 || workers > 32 {
+			return errors.New("workers must be 1..32")
+		}
+	}
+	if opts.Path != "" {
+		path, err = rememberYostarPath(opts.Path)
+		if err != nil {
+			return err
+		}
+	}
+	if path == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		path = filepath.Join(home, "Games", "AzurPromilia-JP")
+	}
+	if err := jpDistinctPath(path, cfg.GamePath); err != nil {
+		return err
+	}
+	if !opts.Quiet {
+		fmt.Fprintln(os.Stderr, "WARNING: Yostar JP is experimental; full installation and launch unverified.")
+	}
+	return runYostar(cmd, path, workers, *version)
 }
 func runYostarMenu() error {
  for {
@@ -70,6 +129,6 @@ func runYostarMenu() error {
    home,e:=os.UserHomeDir();if e!=nil{return e};def:=filepath.Join(home,"Games","AzurPromilia-JP")
    fmt.Printf("日服目录 [%s]: ",def);line,e:=bufio.NewReader(os.Stdin).ReadString('\n');if e!=nil{return e};p:=strings.TrimSpace(line);if p==""{p=def};if _,e=rememberYostarPath(p);e!=nil{return e};continue
   }
-  return runCLI([]string{"yostar",action})
+  return runMenuCommand("yostar", action)
  }
 }

@@ -37,8 +37,42 @@ Local original-source analysis and unit test vectors are not official server evi
 - Run 45962747571: official released config and all 40,299 manifest entries parsed; shared disk preflight incorrectly retained an MD5-only constraint. Fixed in storage.go and extended regression test to go through runFiles.
 - Run [45962884069](https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux/actions/runs/45962884069), head df78ffe0ec3d861203b54233a3e29abcdb87ee71: race tests, vet, Linux build, real official metadata and CDN probe all passed. Official release 1.0.2; 40,299 files; 84,158,601,695 bytes; two CDN origins; launch name AzurPromiliaJP. Real resource `AzurPromiliaJP_Data/StreamingAssets/.res/raw_streaming_package/06ujhj4pltkkp3tyowbnng.r`, size 4 bytes, unsigned CRC64 17628643879108190027. Result: 1/1 verified, 0 failed, 4 bytes transferred. This is evidence of a working live metadata-to-file path, not full-install acceptance. No account or Wine used.
 
-Remaining: full installation and complete local verification, real larger-resource throughput and interruption/resume, real repair after damage, and cross-version update/cleanup. Unit test covers CRC64 resume via local HTTP only. Do not confuse the 4-byte real probe with these acceptance criteria.
+See the local test below for larger-resource throughput and interruption. Full installation, complete local verification, live repair after damage, and cross-version update and cleanup still require acceptance tests. The CRC64 resume test with an asserted Range offset uses a local HTTP server.
 
 ## Integration into current manager
 
 Use `azp yostar -p "$HOME/Games/AzurPromilia-JP" status`, then `azp yostar install`, `verify`, `sync`. The JP directory is stored independently in CLI configuration; the main menu exposes an experimental JP entry. No complete JP installation or launch is claimed. The original research-only scripts and sample-acquisition workflow remain on the research branch.
+
+## 2026-11-27 本机直连与命令行复测
+
+从 `main` 的 `b88c6f2` 在 Linux amd64 上重新编译，使用空游戏目录及独立配置。日服 `1.0.2` 的官方清单含 40,299 个文件，共 84,158,601,695 字节（78.38 GiB）。清除命令环境中的代理变量后，状态查询和 4 字节探针均成功。主、备 CDN 都对同一个 5,617,152 字节资源的前 256 KiB 返回 HTTP 206，响应范围和字节数符合请求。
+
+用 `azp yostar -p "$game_dir" -v install` 直连下载，再用 `azp yostar -p "$game_dir" -j 32 -v install` 在同一目录继续。两次累计传输 **1,970,448,081 字节**。主动停止时有 357 个文件通过 CRC64，零失败、零重试，目录留有 29 个 `.part` 文件，尚未生成完整安装清单。4 并发实测约 0.3–0.6 MiB/s，32 并发在测试后段约 8–10 MiB/s，两个数字只反映本次测试的网络环境。本轮未逐文件确认续传的 Range 偏移，也未完成日服安装或启动。测试文件随后已清理。
+
+本机下载日服无须代理。程序继续遵循标准代理环境变量。以下命令仅对这次探针使用直连，并将路径记录在临时配置里。
+
+```bash
+test_dir=$(mktemp -d)
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
+    -u http_proxy -u https_proxy -u all_proxy \
+    XDG_CONFIG_HOME="$test_dir/config" \
+    ./azp yostar -p "$test_dir/game" probe
+```
+
+如需复测 `install`，请将游戏目录放在剩余空间足以容纳整份游戏清单的文件系统。即使打算提前停止，安装命令也会按全量清单检查可用空间。小文件 `probe` 可在空间较小的文件系统中运行。
+
+### 已修复与验证
+
+| 现象 | 修复与复测 |
+| --- | --- |
+| 主菜单空闲约 100 ms 就因 `EOF` 退出；`--no-color` 仍显示颜色 | 普通按键阻塞等待，只有收到 Esc 后才限时读取后续字节。在伪终端分别让主菜单和日服子菜单空闲超过 0.8 秒，验证分段到达的方向键、连续按键、Enter、Esc、`q`、无颜色输出及退出后恢复终端设置。清屏和光标控制仍保留。 |
+| `yostar -p` 在未知选项、无效版本参数或多余位置参数报错前就写入路径 | 先完成参数解析与校验，再记住显式路径。有效路径仍在任务开始时保存，方便下载中断或网络失败后继续。回归测试覆盖无效参数下的配置保留。 |
+| Ctrl+C 后显示 `下载 complete` | 汇总区分成功、失败与中断，同时保留退出状态和已下载的文件。修复版日服安装直连传输 5,026,956 字节、校验通过 1 个文件后发送 SIGINT，正常退出并报告 `interrupted`，没有生成完整安装清单。 |
+| 未安装时 `yostar verify` 显示底层文件不存在错误并创建空游戏目录 | 缺少清单时提示执行 `yostar install`，保持游戏目录的原有状态。 |
+
+`go test -race -count=1 ./...`、`go vet ./...` 以及 Linux amd64 和 arm64 构建均通过。arm64 在本轮只验证构建。
+
+### 待确认的行为与方案
+
+- **国服旧命令也会提前写入 `-p`。** 在独立配置下，`azp -p /tmp/cn-new status --bad-test-flag` 报错，但后续 `azp path` 显示 `/tmp/cn-new`。建议在国服工作流和旧 `download`、`verify` 的解析入口完成参数校验之后再持久化路径，保留 `azp path` 的显式设置行为和有效命令在网络失败后可直接重试的语义。先确认脚本是否依赖旧入口对多余位置参数的处理，再决定是否一并收紧。
+- **工具更新检查受代理环境影响。** 同一台机器上，`azp upgrade --check` 继承代理时遇到 HTTP 403，清除代理变量后成功。建议在有代理且返回 403 时提示检查代理或允许用户显式选择直连。自动改用直连会改变用户指定的网络路径，需要先确认产品行为。

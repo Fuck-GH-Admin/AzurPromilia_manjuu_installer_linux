@@ -356,7 +356,7 @@ func downloadInstallerFile(ctx context.Context, client *http.Client, rawURL, tar
 		return installerCacheMetadata{}, err
 	}
 	removeTmp = false
-	finishTransferProgress("启动器", total, progressTotal, 1, 0, 1, total)
+	finishTransferProgress("启动器", 1, 0, 1, total, nil)
 	debugf("INSTALLER verified: %d bytes SHA256=%s", total, hash)
 	return installerCacheMetadata{
 		URL:       resolved,

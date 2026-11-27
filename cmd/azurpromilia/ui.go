@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -68,11 +70,11 @@ func progressInterval() time.Duration {
 	return 5 * time.Second
 }
 
-func levelPrefix(name, color string) string {
-	if !outputColor.Load() || color == "" {
-		return "[" + name + "]"
+func styledText(text, style string) string {
+	if !outputColor.Load() || style == "" {
+		return text
 	}
-	return color + "[" + name + "]\x1b[0m"
+	return style + text + "\x1b[0m"
 }
 
 func clearProgressLocked() {
@@ -88,7 +90,7 @@ func writeLogLine(name, color string, min outputLevel, format string, args ...an
 	output.Lock()
 	defer output.Unlock()
 	clearProgressLocked()
-	fmt.Fprintf(os.Stderr, "%s %s\n", levelPrefix(name, color), fmt.Sprintf(format, args...))
+	fmt.Fprintf(os.Stderr, "%s %s\n", styledText("["+name+"]", color), fmt.Sprintf(format, args...))
 }
 
 func debugf(format string, args ...any) {
@@ -163,22 +165,29 @@ func renderTransferProgress(label string, done, total int64, verified, failed, t
 		speed, verified, totalFiles, failed)
 }
 
-func finishTransferProgress(label string, done, total int64, verified, failed, totalFiles int64, transferred int64) {
+func finishTransferProgress(label string, verified, failed, totalFiles, transferred int64, err error) {
 	if isQuietOutput() {
 		activeProgress.Store(false)
 		return
+	}
+	status, statusEN := "完成", "complete"
+	switch {
+	case failed == 0 && errors.Is(err, context.Canceled):
+		status, statusEN = "已中断", "interrupted"
+	case err != nil || failed > 0:
+		status, statusEN = "失败", "failed"
 	}
 	if progressIsInteractive() {
 		output.Lock()
 		clearProgressLocked()
 		activeProgress.Store(false)
-		fmt.Fprintf(os.Stderr, "%s 完成：文件 %d/%d，失败 %d，传输 %s\n",
-			label, verified, totalFiles, failed, formatBytes(uint64(max64(transferred, 0))))
+		fmt.Fprintf(os.Stderr, "%s %s：文件 %d/%d，失败 %d，传输 %s\n",
+			label, status, verified, totalFiles, failed, formatBytes(uint64(max64(transferred, 0))))
 		output.Unlock()
 		return
 	}
-	infof("%s complete: files %d/%d failed=%d transferred=%s",
-		label, verified, totalFiles, failed, formatBytes(uint64(max64(transferred, 0))))
+	infof("%s %s: files %d/%d failed=%d transferred=%s",
+		label, statusEN, verified, totalFiles, failed, formatBytes(uint64(max64(transferred, 0))))
 }
 
 func max64(v, floor int64) int64 {
