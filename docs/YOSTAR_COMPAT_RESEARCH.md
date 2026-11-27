@@ -127,3 +127,7 @@ preload / update / repair
 只有当 Yostar 的游戏下载协议本身与 SC000 完全不同，才考虑独立 backend。
 
 当前主线优先完成 Manjuu / SC000 的 SLICE 全量安装、预下载和跨版本升级验收。Yostar 方向暂时冻结；未来恢复时先按本清单做静态分析，不直接开始大规模重构。
+
+## 2026-11-27 后续进展
+
+此文是历史调查记录；冻结状态已经解除。日服实验性下载实现及实服证据见 [YOSTAR_JP_DOWNLOAD.md](YOSTAR_JP_DOWNLOAD.md)。
