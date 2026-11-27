@@ -36,6 +36,8 @@ jobs:
           ./dist/azurpromilia-linux-amd64 --version | grep -q "^Azur Promilia Linux Manager dev-"
           ./dist/azurpromilia-linux-amd64 completion bash | grep -q "_azp_complete"
           ./dist/azurpromilia-linux-amd64 completion fish | grep -q "complete -c azp"
+          ./dist/azurpromilia-linux-amd64 help resources | grep -q "versions"
+          ./dist/azurpromilia-linux-amd64 completion bash | grep -q "resources"
           ./dist/azurpromilia-linux-amd64 > /tmp/azurpromilia-noargs.txt
           grep -q "Azur Promilia Linux Manager" /tmp/azurpromilia-noargs.txt
           cd dist && sha256sum azurpromilia-linux-* > SHA256SUMS
