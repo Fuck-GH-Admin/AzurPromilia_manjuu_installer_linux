@@ -235,7 +235,7 @@ func statusNextAction(s playerStatus) string {
 	case !s.Installed:
 		return "下一步：azp install"
 	case strings.HasPrefix(s.UpdateState, "可更新"):
-		return "有新版本可用：azp update"
+		return fmt.Sprintf("有新版本可用：%s → %s；运行 azp update", s.LocalVersion, s.RemoteVersion)
 	case s.LaunchEntryState == "缺失":
 		return "启动入口缺失：azp sync"
 	case strings.Contains(s.Preload, "可预下载"):
@@ -296,6 +296,5 @@ func printPlayerStatus(w io.Writer, root, state string, response Response) error
 	printStatusTable(w, rows)
 	fmt.Fprintln(w)
 	fmt.Fprintf(w, "→ %s\n", statusNextAction(s))
-	printUpdateAvailableNotice(w, root, state, response)
 	return nil
 }
