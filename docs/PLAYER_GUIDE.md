@@ -75,6 +75,8 @@ sha256sum -c SHA256SUMS
 - 未设置游戏目录时，优先引导设置目录；
 - 尚未安装时允许安装，但更新、校验和修复会提示先安装；
 - 已安装后默认高亮 Status，并开放 Update / Verify / Sync；
+- “高级选项”可以保存默认并发数、默认安装模式，以及显式安装 Shell Completion；
+- “更新工具”调用的是 `azp upgrade`，不会和更新游戏的 `azp update` 混用；
 - 脚本、管道或 CI 等非交互环境裸跑时只输出帮助，不进入菜单。
 
 ## 5. 官方 SC000 启动器自动获取
@@ -123,6 +125,7 @@ sha256sum -c SHA256SUMS
 
 Status 默认显示：
 
+- azp 工具版本；
 - 游戏目录和安装状态；
 - 本地版本与官方版本；
 - 是否存在可用更新；
@@ -152,7 +155,11 @@ Status 不会执行全量 MD5 扫描；需要完整检查时使用 `./azp verify
 ./azp install -j 8
 ~~~
 
-默认 --mode auto，会按官方元数据中的 downloadMode 选择包类型。只有确认自己要覆盖服务器默认模式时才使用 --mode reality 或 --mode slice。
+默认 `--mode auto`，会按官方元数据中的 downloadMode 选择包类型。只有确认自己要覆盖服务器默认模式时才使用 `--mode reality` 或 `--mode slice`。
+
+交互菜单的“高级选项”可以保存默认并发数和默认安装模式。它们保存在 `~/.config/azurpromilia/config.json`；命令行里的 `-j/--workers` 和 `--mode` 仍然拥有更高优先级，可临时覆盖默认值。
+
+正常终端下载时使用单行动态进度条，显示百分比、传输量、速度和文件数量。使用 `-v/--verbose` 可显示逐文件、重试和 CDN 诊断；`-q/--quiet` 只保留警告、错误和命令结果；`--no-color` 禁用 ANSI 颜色。脚本、管道和 CI 会自动使用周期性文本进度而不是动态控制字符。
 
 下载完成后，程序会保存版本索引和本地 manifest。不要手工删除游戏目录中的 .azurpromilia、_index 等状态目录。
 
@@ -181,6 +188,46 @@ SLICE 模式的当前样本包含 752 个分片，合并 ZIP 为 75,145,275,761 
 `sync` 是 `repair` 的别名；若希望使用原命令，`./azp repair` 完全等价。
 
 Repair 会重新获取当前官方索引，只补齐缺失或损坏的资源。如果服务器已经发布新版本，Repair 会拒绝跨版本修复并提示使用 Update。
+
+### Shell Completion
+
+支持 Bash、Zsh 和 Fish，而且不会在第一次运行时自动修改用户的 shell 配置。
+
+~~~bash
+# 根据 $SHELL 自动选择并安装
+./azp completion install
+
+# 手动指定
+./azp completion install bash
+./azp completion install zsh
+./azp completion install fish
+
+# 仅输出脚本到 stdout
+./azp completion bash
+~~~
+
+安装后重新启动 shell 或重新加载补全系统。Bash 默认写入 `~/.local/share/bash-completion/completions/`，Fish 写入 `~/.config/fish/completions/`，Zsh 写入 `~/.zfunc/_azp` 并在需要时提示配置 `fpath`。
+
+### 更新 azp 工具
+
+注意两个命令的含义固定不同：
+
+~~~text
+azp update   = 更新游戏
+azp upgrade  = 更新 azp 工具自身
+~~~
+
+工具更新来自本项目 GitHub Releases：
+
+~~~bash
+./azp upgrade --check   # 只检查
+./azp upgrade           # 最新发布，包括 Preview / pre-release
+./azp upgrade --stable  # 只使用稳定 Release
+~~~
+
+自更新仅支持打包发布的 Linux amd64 / arm64 版本。程序会先选择与当前架构匹配的 Release asset，优先验证 GitHub 提供的 SHA-256 digest，缺失时读取 Release 的 `SHA256SUMS`；然后在临时目录安全解包、拒绝路径穿越和异常符号链接，并运行新二进制的 `--version` 自检，最后才替换当前包内工具文件。
+
+源码构建和 Actions 开发构建默认拒绝直接被已发布版本覆盖；只有明确使用 `azp upgrade --force` 才允许这样做。
 
 ## 9. Steam / Proton 手动配置
 
@@ -225,8 +272,9 @@ cd AzurPromilia_manjuu_installer_linux
 
 go test -race ./...
 go vet ./...
-CGO_ENABLED=0 go build -trimpath -o ./azurpromilia ./cmd/azurpromilia
+CGO_ENABLED=0 go build -trimpath -ldflags "-X main.toolVersion=dev-local" -o ./azurpromilia ./cmd/azurpromilia
 
+./azurpromilia --version
 ./azurpromilia help
 ~~~
 
