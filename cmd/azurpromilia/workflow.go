@@ -81,14 +81,32 @@ func runWorkflow(command string, args []string) error {
 		return printPlayerStatus(os.Stdout, abs, state, response)
 	case "info":
 		return printPackageInfo(os.Stdout, response)
+	case "resources":
+		return runResourceSelector(ctx, abs, state, installerPath, response, *workers)
 	case "install":
-		return installRelease(ctx, abs, state, installerPath, response, *mode, *workers)
+		if err := installRelease(ctx, abs, state, installerPath, response, *mode, *workers); err != nil {
+			return err
+		}
+		printWorkflowNextSteps(os.Stdout, "install", abs, state, response)
+		return nil
 	case "update":
-		return updateRelease(ctx, abs, state, installerPath, response, *workers)
+		if err := updateRelease(ctx, abs, state, installerPath, response, *workers); err != nil {
+			return err
+		}
+		printWorkflowNextSteps(os.Stdout, "update", abs, state, response)
+		return nil
 	case "repair":
-		return repairRelease(ctx, abs, state, installerPath, response, *workers)
+		if err := repairRelease(ctx, abs, state, installerPath, response, *workers); err != nil {
+			return err
+		}
+		printWorkflowNextSteps(os.Stdout, "repair", abs, state, response)
+		return nil
 	case "preload":
-		return preloadRelease(ctx, abs, state, installerPath, response, *workers)
+		if err := preloadRelease(ctx, abs, state, installerPath, response, *workers); err != nil {
+			return err
+		}
+		printWorkflowNextSteps(os.Stdout, "preload", abs, state, response)
+		return nil
 	default:
 		return fmt.Errorf("unknown workflow command %q", command)
 	}

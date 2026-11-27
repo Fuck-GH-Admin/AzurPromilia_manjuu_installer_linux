@@ -165,42 +165,136 @@ func versionDisplay(version, name string) string {
 	}
 }
 
+func displayCellWidth(s string) int {
+	width := 0
+	for _, r := range s {
+		switch {
+		case r == '\t':
+			width += 4
+		case r >= 0x1100 && (
+			r <= 0x115f ||
+				r == 0x2329 || r == 0x232a ||
+				(r >= 0x2e80 && r <= 0xa4cf && r != 0x303f) ||
+				(r >= 0xac00 && r <= 0xd7a3) ||
+				(r >= 0xf900 && r <= 0xfaff) ||
+				(r >= 0xfe10 && r <= 0xfe19) ||
+				(r >= 0xfe30 && r <= 0xfe6f) ||
+				(r >= 0xff00 && r <= 0xff60) ||
+				(r >= 0xffe0 && r <= 0xffe6) ||
+				(r >= 0x1f300 && r <= 0x1faff)):
+			width += 2
+		default:
+			width++
+		}
+	}
+	return width
+}
+
+func padStatusCell(s string, width int) string {
+	if n := displayCellWidth(s); n < width {
+		return s + strings.Repeat(" ", width-n)
+	}
+	return s
+}
+
+func printStatusTable(w io.Writer, rows [][2]string) {
+	labelWidth := 8
+	valueWidth := 12
+	for _, row := range rows {
+		if n := displayCellWidth(row[0]); n > labelWidth {
+			labelWidth = n
+		}
+		if n := displayCellWidth(row[1]); n > valueWidth {
+			valueWidth = n
+		}
+	}
+	line := func(left, middle, right string) {
+		fmt.Fprintf(w, "%s%s%s%s%s\n",
+			left,
+			strings.Repeat("─", labelWidth+2),
+			middle,
+			strings.Repeat("─", valueWidth+2),
+			right,
+		)
+	}
+	line("┌", "┬", "┐")
+	for i, row := range rows {
+		fmt.Fprintf(w, "│ %s │ %s │\n",
+			padStatusCell(row[0], labelWidth),
+			padStatusCell(row[1], valueWidth),
+		)
+		if i != len(rows)-1 {
+			line("├", "┼", "┤")
+		}
+	}
+	line("└", "┴", "┘")
+}
+
+func statusNextAction(s playerStatus) string {
+	switch {
+	case !s.Installed:
+		return "下一步：azp install"
+	case strings.HasPrefix(s.UpdateState, "可更新"):
+		return fmt.Sprintf("有新版本可用：%s → %s；运行 azp update", s.LocalVersion, s.RemoteVersion)
+	case s.LaunchEntryState == "缺失":
+		return "启动入口缺失：azp sync"
+	case strings.Contains(s.Preload, "可预下载"):
+		return "存在预下载：azp predownload"
+	default:
+		return "当前版本可用；需要完整检查时运行 azp verify"
+	}
+}
+
 func printPlayerStatus(w io.Writer, root, state string, response Response) error {
 	s := collectPlayerStatus(root, state, response)
-
-	fmt.Fprintln(w, "Azur Promilia Linux Manager")
-	fmt.Fprintln(w)
-	fmt.Fprintf(w, "  工具版本:   %s\n", toolVersion)
-	fmt.Fprintf(w, "  游戏目录:   %s\n", s.Root)
-	if s.Installed {
-		fmt.Fprintln(w, "  安装状态:   已安装")
-		fmt.Fprintf(w, "  本地版本:   %s\n", versionDisplay(s.LocalVersion, s.LocalVersionName))
-	} else {
-		fmt.Fprintln(w, "  安装状态:   未安装")
-		fmt.Fprintln(w, "  本地版本:   —")
+	rows := [][2]string{
+		{"工具版本", toolVersion},
+		{"游戏目录", s.Root},
 	}
-	fmt.Fprintf(w, "  官方版本:   %s\n", versionDisplay(s.RemoteVersion, s.RemoteVersionName))
-	fmt.Fprintf(w, "  更新状态:   %s\n", s.UpdateState)
-	fmt.Fprintf(w, "  下载模式:   %s\n", s.DownloadMode)
+	if s.Installed {
+		rows = append(rows,
+			[2]string{"安装状态", "已安装"},
+			[2]string{"本地版本", versionDisplay(s.LocalVersion, s.LocalVersionName)},
+		)
+	} else {
+		rows = append(rows,
+			[2]string{"安装状态", "未安装"},
+			[2]string{"本地版本", "—"},
+		)
+	}
+	rows = append(rows,
+		[2]string{"官方版本", versionDisplay(s.RemoteVersion, s.RemoteVersionName)},
+		[2]string{"更新状态", s.UpdateState},
+		[2]string{"下载模式", s.DownloadMode},
+	)
 
 	if s.ResourceCount > 0 {
 		pkg := ""
 		if s.PackageType > 0 {
-			pkg = fmt.Sprintf(" · packageType %d", s.PackageType)
+			pkg = fmt.Sprintf(" · %s / packageType %d", packageModeName(s.PackageType), s.PackageType)
 		}
-		fmt.Fprintf(w, "  本地清单:   %d 个文件 · %s%s\n", s.ResourceCount, formatBytes(s.ResourceBytes), pkg)
+		rows = append(rows, [2]string{
+			"本地清单",
+			fmt.Sprintf("%d 个文件 · %s%s", s.ResourceCount, formatBytes(s.ResourceBytes), pkg),
+		})
 	} else {
-		fmt.Fprintln(w, "  本地清单:   无")
+		rows = append(rows, [2]string{"本地清单", "无"})
 	}
 
 	if s.LaunchEntry != "" {
-		fmt.Fprintf(w, "  启动入口:   %s · %s\n", s.LaunchEntry, s.LaunchEntryState)
+		rows = append(rows, [2]string{"启动入口", s.LaunchEntry + " · " + s.LaunchEntryState})
 	} else {
-		fmt.Fprintf(w, "  启动入口:   %s\n", s.LaunchEntryState)
+		rows = append(rows, [2]string{"启动入口", s.LaunchEntryState})
 	}
-	fmt.Fprintf(w, "  预下载:     %s\n", s.Preload)
+	rows = append(rows, [2]string{"预下载", s.Preload})
 	if s.HasFreeBytes {
-		fmt.Fprintf(w, "  磁盘可用:   %s\n", formatBytes(s.FreeBytes))
+		rows = append(rows, [2]string{"磁盘可用", formatBytes(s.FreeBytes)})
 	}
+
+	fmt.Fprintln(w, "Azur Promilia Linux Manager")
+	fmt.Fprintln(w)
+	printStatusTable(w, rows)
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "→ %s\n", statusNextAction(s))
 	return nil
 }

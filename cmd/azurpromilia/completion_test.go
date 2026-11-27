@@ -13,7 +13,7 @@ func TestCompletionScriptsExposePlayerCommands(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s completion: %v", shell, err)
 		}
-		for _, want := range []string{"azp", "install", "status", "upgrade", "completion"} {
+		for _, want := range []string{"azp", "install", "status", "resources", "versions", "upgrade", "completion"} {
 			if !strings.Contains(script, want) {
 				t.Fatalf("%s completion missing %q", shell, want)
 			}

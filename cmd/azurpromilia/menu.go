@@ -55,6 +55,11 @@ func localMenuState(path string) (bool, string) {
 func buildMainMenu(path string) ([]menuItem, int) {
 	installed, version := localMenuState(path)
 	noPath := strings.TrimSpace(path) == ""
+	updateHint := cachedGameUpdateHint(path)
+	updateDescription := "将现有安装更新到当前正式版"
+	if updateHint != "" {
+		updateDescription = updateHint
+	}
 
 	blockPath := ""
 	if noPath {
@@ -74,9 +79,10 @@ func buildMainMenu(path string) ([]menuItem, int) {
 	}
 
 	items := []menuItem{
-		{Key: "status", Label: "状态", Description: "查看本地与官方版本、更新状态和磁盘信息", Blocked: blockPath},
+		{Key: "status", Label: "状态", Description: "查看漂亮状态表、版本差异和下一步建议", Blocked: blockPath},
+		{Key: "resources", Label: "版本 / 资源", Description: "浏览正式版、预下载版与官方可用资源模式", Blocked: blockPath},
 		{Key: "install", Label: "安装", Description: "下载并安装当前正式版", Blocked: blockInstall},
-		{Key: "update", Label: "更新", Description: "将现有安装更新到当前正式版", Blocked: blockInstalled},
+		{Key: "update", Label: "更新", Description: updateDescription, Blocked: blockInstalled},
 		{Key: "verify", Label: "校验", Description: "完整检查本地游戏文件，不下载", Blocked: blockInstalled},
 		{Key: "sync", Label: "修复 / Sync", Description: "校验并重新下载缺失或损坏文件", Blocked: blockInstalled},
 		{Key: "predownload", Label: "预下载", Description: "下载下一版本的差异资源（Preview）", Blocked: blockInstalled},
@@ -90,9 +96,9 @@ func buildMainMenu(path string) ([]menuItem, int) {
 	initial := 0
 	switch {
 	case noPath:
-		initial = 6
+		initial = 7
 	case !installed:
-		initial = 1
+		initial = 2
 	default:
 		initial = 0
 	}
@@ -115,6 +121,9 @@ func renderMainMenu(items []menuItem, selected int, path string) string {
 	}
 	if cfg, err := loadCLIConfig(); err == nil {
 		fmt.Fprintf(&b, " 默认设置: %d workers · %s\n", preferredWorkers(cfg), preferredInstallMode(cfg))
+	}
+	if hint := cachedGameUpdateHint(path); hint != "" {
+		fmt.Fprintf(&b, " \x1b[1;33m⚠ %s\x1b[0m\n", hint)
 	}
 	b.WriteString("\n")
 
@@ -425,6 +434,11 @@ func runInteractiveMenu() error {
 			continue
 		case "advanced":
 			if err := runAdvancedMenu(); err != nil {
+				return err
+			}
+			continue
+		case "resources":
+			if err := runCLI([]string{"resources"}); err != nil {
 				return err
 			}
 			continue

@@ -16,8 +16,15 @@ func fakeStatusResponse() Response {
 	r.Data.Released.Version = json.RawMessage(`"1.0.2"`)
 	r.Data.Released.Name = "Release 1.0.2"
 	r.Data.Released.LaunchEntry = "AzurPromilia.exe"
+	r.Data.Released.Packages = []Package{
+		{Type: 2, URL: "https://example.invalid/reality", MD5: "00000000000000000000000000000000", Size: 123},
+		{Type: 1, URL: "https://example.invalid/slice", MD5: "11111111111111111111111111111111", Size: 456},
+	}
 	r.Data.Preload.Version = json.RawMessage(`"1.0.3"`)
 	r.Data.Preload.Name = "Preload 1.0.3"
+	r.Data.Preload.Packages = []Package{
+		{Type: 2, URL: "https://example.invalid/preload", MD5: "22222222222222222222222222222222", Size: 789},
+	}
 	return r
 }
 
@@ -81,7 +88,7 @@ func TestPrintPlayerStatusIsConcise(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := b.String()
-	for _, want := range []string{"工具版本:", "游戏目录:", "安装状态:", "官方版本:", "更新状态:", "下载模式:", "启动入口:", "预下载:"} {
+	for _, want := range []string{"┌", "┬", "└", "工具版本", "游戏目录", "安装状态", "官方版本", "更新状态", "下载模式", "启动入口", "预下载", "→"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("status missing %q:\n%s", want, out)
 		}
@@ -152,9 +159,44 @@ func TestRenderMainMenuContainsNavigationHints(t *testing.T) {
 	}
 	items, selected := buildMainMenu("")
 	out := renderMainMenu(items, selected, "")
-	for _, want := range []string{"Azur Promilia Linux Manager", "↑/↓", "Enter", "Esc/q", "游戏目录", "高级选项", "更新工具", "8 workers", "reality"} {
+	for _, want := range []string{"Azur Promilia Linux Manager", "↑/↓", "Enter", "Esc/q", "游戏目录", "版本 / 资源", "高级选项", "更新工具", "8 workers", "reality"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("menu missing %q:\n%s", want, out)
 		}
+	}
+}
+
+
+func TestMainMenuShowsCachedGameUpdateHint(t *testing.T) {
+	root := t.TempDir()
+	state := filepath.Join(root, ".azurpromilia")
+	if err := os.MkdirAll(state, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveVersion(root, state, Manifest{Version: "1.0.1", VersionName: "Old"}); err != nil {
+		t.Fatal(err)
+	}
+	response := fakeStatusResponse()
+	if err := writeJSONAtomic(filepath.Join(state, "packageconfig.json"), response); err != nil {
+		t.Fatal(err)
+	}
+	items, selected := buildMainMenu(root)
+	out := renderMainMenu(items, selected, root)
+	if !strings.Contains(out, "有更新：1.0.1 → 1.0.2") {
+		t.Fatalf("menu did not surface cached update hint:\n%s", out)
+	}
+}
+
+func TestStatusNextActionPrioritizesUpdate(t *testing.T) {
+	s := playerStatus{
+		Installed:     true,
+		LocalVersion:  "1.0.1",
+		RemoteVersion: "1.0.2",
+		UpdateState:   "可更新：1.0.1 → 1.0.2",
+		Preload:       "1.0.3（可预下载）",
+	}
+	got := statusNextAction(s)
+	if !strings.Contains(got, "azp update") {
+		t.Fatalf("next action=%q", got)
 	}
 }

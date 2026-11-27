@@ -161,7 +161,7 @@ func downloadFile(ctx context.Context,root string,e Entry,cdn []string,network *
   }
   if er==nil&&verify(part,e){return os.Rename(part,p)}
   if er==nil{er=errors.New("MD5 mismatch");_ = os.Remove(part)}
-  last=er;logf("RETRY %s (%d): %v",e.Name,attempt+1,last)
+  last=er;debugf("RETRY %s (%d): %v",e.Name,attempt+1,last)
   select{case <-ctx.Done():return ctx.Err();case <-time.After(time.Duration(attempt+1)*time.Second):}
  }
  return fmt.Errorf("%s: %w",e.Name,last)
@@ -583,13 +583,13 @@ func verifyExtracted(archive, root string) error {
 func main(){if err:=run();err!=nil{errorf("%v",err);os.Exit(1)}}
 func run() error { return runCLI(os.Args[1:]) }
 func runCommand(cmd string, args []string) error {
- if cmd=="install"||cmd=="update"||cmd=="repair"||cmd=="preload"||cmd=="status"||cmd=="info"{return runWorkflow(cmd,args)}
+ if cmd=="install"||cmd=="update"||cmd=="repair"||cmd=="preload"||cmd=="status"||cmd=="info"||cmd=="resources"{return runWorkflow(cmd,args)}
  fs:=flag.NewFlagSet(cmd,flag.ContinueOnError);root:=fs.String("root","AzurPromilia","game directory");pkgPath:=fs.String("packageconfig","","official packageconfig response JSON");exe:=fs.String("installer","","optional SC000 installer EXE override; acquired automatically if omitted");target:=fs.String("target","released","released or preload");workers:=fs.Int("workers",4,"parallel downloads");slice:=fs.Bool("slice",false,"select slice package");noExtract:=fs.Bool("no-extract",false,"do not extract ZIP");probe:=fs.Bool("probe",false,"only fetch official index and one smallest nonempty resource; do not install");versionFlag:=fs.String("version","","preload version for verification");mode:=fs.String("mode","auto","auto, slice or reality");if e:=fs.Parse(args);e!=nil{if e==flag.ErrHelp{return nil};return e}
  if *workers<1||*workers>32{return errors.New("workers must be 1..32")}
  abs,e:=filepath.Abs(*root);if e!=nil{return e};if e=os.MkdirAll(abs,0755);e!=nil{return e};abs,e=filepath.EvalSymlinks(abs);if e!=nil{return e}
  ctx,cancel:=signal.NotifyContext(context.Background(),os.Interrupt);defer cancel()
  state:=filepath.Join(abs,".azurpromilia");manifestPath:=filepath.Join(state,"manifest.json");var m Manifest
- if cmd=="verify"{if *target=="preload"{if *versionFlag==""||!regexp.MustCompile("^[a-zA-Z0-9_.-]+$").MatchString(*versionFlag){return errors.New("verify preload requires --version")};manifestPath=filepath.Join(state,"preload-"+*versionFlag+".json")}else if *target!="released"{return errors.New("invalid target")};b,e:=os.ReadFile(manifestPath);if e!=nil{return e};if e=json.Unmarshal(b,&m);e!=nil{return e};work:=abs;if *target=="preload"{work=filepath.Join(abs,"_pre_download",m.Version)};if len(m.Extracted)>0{if e=verifyExtractedEntries(work,m.Extracted);e!=nil{return e};if len(m.Files)==0{return nil}};if m.Archive!=nil{archive:=filepath.Join(state,"archives",m.Version+".zip");if _,statErr:=os.Stat(archive);statErr==nil{if !verify(archive,*m.Archive){return errors.New("merged archive missing or invalid")};if !*noExtract{if e=verifyExtracted(archive,work);e!=nil{return e}}}else if len(m.Extracted)==0{return errors.New("merged archive missing or invalid")};work=filepath.Join(state,"slices",m.Version)};return runFiles(ctx,work,m,*workers,true)}
+ if cmd=="verify"{if *target=="preload"{if *versionFlag==""||!regexp.MustCompile("^[a-zA-Z0-9_.-]+$").MatchString(*versionFlag){return errors.New("verify preload requires --version")};manifestPath=filepath.Join(state,"preload-"+*versionFlag+".json")}else if *target!="released"{return errors.New("invalid target")};b,e:=os.ReadFile(manifestPath);if e!=nil{return e};if e=json.Unmarshal(b,&m);e!=nil{return e};work:=abs;if *target=="preload"{work=filepath.Join(abs,"_pre_download",m.Version)};if len(m.Extracted)>0{if e=verifyExtractedEntries(work,m.Extracted);e!=nil{return e};if len(m.Files)==0{printVerifyNextSteps(os.Stdout,*target,m.Version);return nil}};if m.Archive!=nil{archive:=filepath.Join(state,"archives",m.Version+".zip");if _,statErr:=os.Stat(archive);statErr==nil{if !verify(archive,*m.Archive){return errors.New("merged archive missing or invalid")};if !*noExtract{if e=verifyExtracted(archive,work);e!=nil{return e}}}else if len(m.Extracted)==0{return errors.New("merged archive missing or invalid")};work=filepath.Join(state,"slices",m.Version)};if e=runFiles(ctx,work,m,*workers,true);e!=nil{return e};printVerifyNextSteps(os.Stdout,*target,m.Version);return nil}
  if cmd!="download"{return errors.New("unknown command")};if *pkgPath==""{return errors.New("--packageconfig required")}
  installerPath,e:=resolveInstaller(ctx,*exe,state);if e!=nil{return e}
  key,iv,e:=installerKeys(installerPath);if e!=nil{return e};raw,e:=os.ReadFile(*pkgPath);if e!=nil{return e}
