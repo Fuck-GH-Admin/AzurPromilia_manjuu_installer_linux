@@ -644,7 +644,7 @@ func verifyExtractedEntries(root string, entries []ExtractedEntry) error {
 	for _, entry := range entries {
 		if !extractedEntryValid(root, entry) {
 			failed++
-			logf("FAIL extracted %s: missing, non-regular, wrong size or CRC32 mismatch", entry.Name)
+			errorf("extracted %s: missing, non-regular, wrong size or CRC32 mismatch", entry.Name)
 		}
 	}
 	if failed > 0 {
@@ -797,7 +797,7 @@ func installRelease(ctx context.Context, root, state, installer string, response
 			}
 			return saveVersion(root, state, reality)
 		} else {
-			logf("WARN type-2 baseline index unavailable after slice install: %v", e)
+			warnf("type-2 baseline index unavailable after slice install: %v", e)
 		}
 	}
 	if err = saveManifest(state, m); err != nil {
@@ -859,7 +859,7 @@ func updateRelease(ctx context.Context, root, state, installer string, response 
 	if st, statErr := os.Lstat(stage); statErr == nil && st.IsDir() {
 		used, seedErr := seedPreloadFiles(root, stage, m.Files)
 		if seedErr != nil {
-			logf("WARN predownload cache not fully usable: %v", seedErr)
+			warnf("predownload cache not fully usable: %v", seedErr)
 		}
 		logf("UPDATE reused %d verified bytes from preload cache", used)
 	}
@@ -875,7 +875,7 @@ func updateRelease(ctx context.Context, root, state, installer string, response 
 			return err
 		}
 	} else {
-		logf("WARN no previous file manifest; preserving untracked files")
+		warnf("no previous file manifest; preserving untracked files")
 	}
 	if err = saveOfficialIndex(root, m.Version, encrypted); err != nil {
 		return err
