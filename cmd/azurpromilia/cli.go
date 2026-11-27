@@ -211,6 +211,8 @@ func canonicalCommand(command string) string {
 		return "repair"
 	case "predownload":
 		return "preload"
+	case "versions":
+		return "resources"
 	default:
 		return command
 	}
@@ -228,7 +230,9 @@ Commands:
   repair        Verify and repair missing or damaged files
   sync          Alias for repair
   verify        Verify installed files without downloading
-  status        Show the current official version and download mode
+  status        Show the player-facing status table and update guidance
+  resources     Browse official released/preload versions and resource modes
+  versions      Alias for resources
   preload       Pre-download the next release (preview)
   predownload   Alias for preload
   path          Show or set the remembered game directory
@@ -360,6 +364,27 @@ Advanced metadata options:
   --refresh
 
 `, prog)
+	case "resources":
+		fmt.Fprintf(w, `Usage:
+  %s resources [options]
+  %s versions [options]
+
+Show the current official released/preload versions and the resource package
+modes actually exposed by the server. In a real terminal this continues into an
+interactive version/resource selector; in scripts it only prints the overview.
+
+Options:
+  -p, --path PATH       Game directory; remembered for future commands
+  -j, --workers N       Parallel workers used if an interactive action is chosen
+
+Advanced metadata options:
+  --installer FILE
+  --packageconfig FILE
+  --python FILE
+  --wine FILE
+  --refresh
+
+`, prog, prog)
 	case "info":
 		fmt.Fprintf(w, `Usage:
   %s info [options]
@@ -533,7 +558,7 @@ func runCLI(args []string) error {
 
 	canonical := canonicalCommand(command)
 	switch canonical {
-	case "install", "update", "repair", "verify", "status", "info", "preload", "download":
+	case "install", "update", "repair", "verify", "status", "info", "resources", "preload", "download":
 	default:
 		printTopLevelHelp(os.Stderr, prog)
 		return fmt.Errorf("unknown command %q", command)
