@@ -30,3 +30,11 @@ Install/repair converge to the latest manifest and do not remove unknown or obso
 ## Verification
 
 Local original-source analysis and unit test vectors are not official server evidence. The live Actions workflow must actually discover the released configuration, parse the manifest, download a nonempty official resource, and verify its CRC64 before marking the public protocol accepted. Full installation remains a separate acceptance test. Keep the PR as draft until verified; do not merge into main solely on static analysis.
+
+## Real server acceptance (2026-11-27)
+
+- Run 45962589151: go race tests, vet and build passed; real API/manifest fetched, then leading slash in official file path was rejected. Fixed by stripping exactly one leading slash before path validation.
+- Run 45962747571: official released config and all 40,299 manifest entries parsed; shared disk preflight incorrectly retained an MD5-only constraint. Fixed in storage.go and extended regression test to go through runFiles.
+- Run [45962884069](https://github.com/Fuck-GH-Admin/AzurPromilia_manjuu_installer_linux/actions/runs/45962884069), head df78ffe0ec3d861203b54233a3e29abcdb87ee71: race tests, vet, Linux build, real official metadata and CDN probe all passed. Official release 1.0.2; 40,299 files; 84,158,601,695 bytes; two CDN origins; launch name AzurPromiliaJP. Real resource `AzurPromiliaJP_Data/StreamingAssets/.res/raw_streaming_package/06ujhj4pltkkp3tyowbnng.r`, size 4 bytes, unsigned CRC64 17628643879108190027. Result: 1/1 verified, 0 failed, 4 bytes transferred. This is evidence of a working live metadata-to-file path, not full-install acceptance. No account or Wine used.
+
+Remaining: full installation and complete local verification, real larger-resource throughput and interruption/resume, real repair after damage, and cross-version update/cleanup. Unit test covers CRC64 resume via local HTTP only. Do not confuse the 4-byte real probe with these acceptance criteria.
