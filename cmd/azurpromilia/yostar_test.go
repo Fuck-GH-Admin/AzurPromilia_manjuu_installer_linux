@@ -18,12 +18,12 @@ func TestYostarCRC(t *testing.T) {
     if verifyEntryHash(bytes.NewBufferString("x"),"crc64:0") || validEntryChecksum("crc64:18446744073709551616") {t.Fatal("invalid CRC accepted")}
 }
 func TestYostarManifest(t *testing.T) {
-    raw:=jpRawManifest{Source:"/game/v1/",File:[]jpRawFile{{Path:"abc/日本 語#1.bin",Size:json.RawMessage(`"9"`),Hash:json.RawMessage(`"11051210869376104954"`)}}}
+    raw:=jpRawManifest{Source:"/game/v1/",File:[]jpRawFile{{Path:"/abc/日本 語#1.bin",Size:json.RawMessage(`"9"`),Hash:json.RawMessage(`"11051210869376104954"`)}}}
     c:=jpGameConfig{Version:"1.0"}
     d:=jpDomains{Primary:"https://cdn.example.com/ignored"}
     m,e:=jpParseManifest(raw,c,d)
     if e!=nil||len(m.Files)!=1||m.Files[0].MD5!="crc64:11051210869376104954"||m.CDN[0]!="https://cdn.example.com/"||m.Files[0].Remote!="game/v1/abc/%E6%97%A5%E6%9C%AC%20%E8%AA%9E%231.bin"{t.Fatalf("manifest: %+v %v",m,e)}
-    for _,p:=range []string{"../bad","abc/../../bad","/root","abc\\bad",".azurpromilia-yostar/manifest.json","_index/version","bad.part"}{
+    for _,p:=range []string{"../bad","abc/../../bad","//root","/../root","abc\\bad",".azurpromilia-yostar/manifest.json","_index/version","bad.part"}{
         raw.File[0].Path=p
         if _,e=jpParseManifest(raw,c,d);e==nil{t.Fatalf("unsafe path accepted: %q",p)}
     }
