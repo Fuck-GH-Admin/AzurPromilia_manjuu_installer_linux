@@ -198,6 +198,9 @@ func safeExtractRelease(archivePath, dst string) error {
 		if err == io.EOF { break }
 		if err != nil { return err }
 		name := strings.TrimPrefix(filepath.ToSlash(h.Name), "./")
+		if h.Typeflag == tar.TypeDir {
+			name = strings.TrimSuffix(name, "/")
+		}
 		parts := strings.Split(name, "/")
 		if len(parts) == 0 || parts[0] == "" || parts[0] == "." || parts[0] == ".." {
 			return fmt.Errorf("unsafe release archive path %q", h.Name)
