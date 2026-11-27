@@ -102,7 +102,7 @@ func TestHelpIsPlayerFacing(t *testing.T) {
 	var b bytes.Buffer
 	printTopLevelHelp(&b, "azp")
 	s := b.String()
-	for _, want := range []string{"azp -p", "install", "status", "sync", "upgrade", "completion", "--version", "--verbose", "--help"} {
+	for _, want := range []string{"azp -p", "install", "status", "resources", "versions", "sync", "upgrade", "completion", "--version", "--verbose", "--help"} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("help missing %q:\n%s", want, s)
 		}
@@ -117,6 +117,7 @@ func TestCommandAliases(t *testing.T) {
 		"status":      "status",
 		"sync":        "repair",
 		"predownload": "preload",
+		"versions":    "resources",
 		"verify":      "verify",
 	}
 	for in, want := range cases {
