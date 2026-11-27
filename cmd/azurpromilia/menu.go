@@ -20,11 +20,19 @@ type menuItem struct {
 }
 
 func terminalAvailable() bool {
+	if os.Getenv("CI") != "" || os.Getenv("GITHUB_ACTIONS") != "" {
+		return false
+	}
 	in, inErr := os.Stdin.Stat()
 	out, outErr := os.Stdout.Stat()
-	return inErr == nil && outErr == nil &&
-		in.Mode()&os.ModeCharDevice != 0 &&
-		out.Mode()&os.ModeCharDevice != 0
+	if inErr != nil || outErr != nil ||
+		in.Mode()&os.ModeCharDevice == 0 ||
+		out.Mode()&os.ModeCharDevice == 0 {
+		return false
+	}
+	var inTerm, outTerm syscall.Termios
+	return ioctlTermios(os.Stdin.Fd(), syscall.TCGETS, &inTerm) == nil &&
+		ioctlTermios(os.Stdout.Fd(), syscall.TCGETS, &outTerm) == nil
 }
 
 func localMenuState(path string) (bool, string) {
