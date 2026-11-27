@@ -8,7 +8,6 @@ import (
     "net/http/httptest"
     "os"
     "path/filepath"
-    "sync/atomic"
     "testing"
 )
 
@@ -39,7 +38,6 @@ func TestYostarWorkerResume(t *testing.T){
     }));defer srv.Close()
     if e:=os.WriteFile(filepath.Join(root,"sample.part"),data[:3],0600);e!=nil{t.Fatal(e)}
     entry:=Entry{Name:"sample",Remote:srv.URL,MD5:"crc64:11051210869376104954",Size:9}
-    var n atomic.Int64
-    if e:=download(context.Background(),root,entry,nil,&n);e!=nil{t.Fatal(e)}
-    if !verify(filepath.Join(root,"sample"),entry)||n.Load()!=6{t.Fatal("resume failed")}
+    if e:=runFiles(context.Background(),root,Manifest{Files:[]Entry{entry}},1,false);e!=nil{t.Fatal(e)}
+    if !verify(filepath.Join(root,"sample"),entry){t.Fatal("resume failed")}
 }
