@@ -70,12 +70,16 @@ jobs:
           for arch in amd64 arm64; do
             package="azurpromilia-${RELEASE_TAG}-linux-$arch"
             mkdir -p "dist/$package/docs" "dist/$package/tools"
-            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -o "dist/$package/azurpromilia" ./cmd/azurpromilia
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -ldflags "-X main.toolVersion=$RELEASE_TAG" -o "dist/$package/azurpromilia" ./cmd/azurpromilia
             ln -s azurpromilia "dist/$package/azp"
             cp README.md LICENSE "dist/$package/"
             cp -r docs/. "dist/$package/docs/"
             cp tools/bootstrap.py tools/fetch_packageconfig.cjs tools/steam-launch-options.example "dist/$package/tools/"
             chmod 0755 "dist/$package/azurpromilia"
+            if [[ "$arch" == "amd64" ]]; then
+              "dist/$package/azurpromilia" --version | grep -F "$RELEASE_TAG"
+              "dist/$package/azurpromilia" completion bash | grep -q "_azp_complete"
+            fi
             (cd "dist/$package" && sha256sum azurpromilia azp > SHA256SUMS)
             tar -czf "dist/$package.tar.gz" -C dist "$package"
             archives+=("$package.tar.gz")

@@ -24,14 +24,18 @@ jobs:
       - run: node --check tools/fetch_packageconfig.cjs
       - run: |
           mkdir -p dist
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o dist/azurpromilia-linux-amd64 ./cmd/azurpromilia
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o dist/azurpromilia-linux-arm64 ./cmd/azurpromilia
+          tool_version="dev-${GITHUB_SHA::7}"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-X main.toolVersion=$tool_version" -o dist/azurpromilia-linux-amd64 ./cmd/azurpromilia
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-X main.toolVersion=$tool_version" -o dist/azurpromilia-linux-arm64 ./cmd/azurpromilia
           cp -r tools dist/tools
           cp -r docs dist/docs
           cp README.md dist/README.md
           cp LICENSE dist/LICENSE
           ./dist/azurpromilia-linux-amd64 help
           ./dist/azurpromilia-linux-amd64 --help
+          ./dist/azurpromilia-linux-amd64 --version | grep -q "^Azur Promilia Linux Manager dev-"
+          ./dist/azurpromilia-linux-amd64 completion bash | grep -q "_azp_complete"
+          ./dist/azurpromilia-linux-amd64 completion fish | grep -q "complete -c azp"
           ./dist/azurpromilia-linux-amd64 > /tmp/azurpromilia-noargs.txt
           grep -q "Azur Promilia Linux Manager" /tmp/azurpromilia-noargs.txt
           cd dist && sha256sum azurpromilia-linux-* > SHA256SUMS

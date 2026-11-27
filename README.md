@@ -66,7 +66,9 @@ amd64 已通过自动引导和 CDN 实测。arm64 下载器可以使用已有官
 ./azp
 ~~~
 
-会打开轻量交互菜单，可用 ↑/↓ 选择、Enter 确认、Esc 或 q 退出。菜单提供状态、安装、更新、校验、修复、预下载、游戏目录和帮助入口。
+会打开轻量交互菜单，可用 ↑/↓ 选择、Enter 确认、Esc 或 q 退出。菜单提供状态、安装、更新、校验、修复、预下载、游戏目录、高级选项、工具更新和帮助入口。
+
+“高级选项”可以保存默认下载并发数、默认安装包模式，并显式安装 Shell Completion。保存后的默认值仍可被命令行参数临时覆盖。
 
 如果程序发现自己运行在管道、脚本或 CI 等非交互环境中，裸跑不会等待键盘输入，而是直接输出帮助。
 
@@ -100,8 +102,11 @@ amd64 已通过自动引导和 CDN 实测。arm64 下载器可以使用已有官
 # 校验并自动修复缺失 / 损坏文件
 ./azp sync
 
-# 更新已有安装
+# 更新已有游戏安装
 ./azp update
+
+# 更新 azp 工具自身（与游戏 update 是两个命令）
+./azp upgrade
 
 # 预下载下一版本（Preview）
 ./azp predownload
@@ -128,6 +133,7 @@ amd64 已通过自动引导和 CDN 实测。arm64 下载器可以使用已有官
 ~~~text
 Azur Promilia Linux Manager
 
+  工具版本:   v...
   游戏目录:   /home/user/Games/AzurPromilia
   安装状态:   已安装
   本地版本:   ...
@@ -141,6 +147,53 @@ Azur Promilia Linux Manager
 ~~~
 
 原来的 `info` 不删除，继续提供详细 package/CDN/launch metadata，主要用于排障和开发。
+
+### Shell Completion
+
+支持 Bash、Zsh 和 Fish。默认不会偷偷修改 shell 配置；需要时显式安装：
+
+~~~bash
+# 自动识别 $SHELL 并安装
+./azp completion install
+
+# 或明确指定 shell
+./azp completion install bash
+./azp completion install zsh
+./azp completion install fish
+
+# 只打印补全脚本，不写任何文件
+./azp completion bash
+~~~
+
+安装后重新打开 shell（或重新加载 completion 系统）。之后可直接使用例如 `azp <Tab>`、`azp install --<Tab>`。
+
+### 更新工具自身
+
+`update` 始终表示**更新游戏**；`upgrade` 才表示**更新 azp 工具自身**：
+
+~~~bash
+# 只检查当前会选择哪个 GitHub Release
+./azp upgrade --check
+
+# 更新到最新发布（包括 Preview / pre-release）
+./azp upgrade
+
+# 只跟踪稳定版
+./azp upgrade --stable
+~~~
+
+自更新仅针对 Release 包中的 Linux amd64 / arm64 版本。更新前会匹配架构、校验 GitHub Release asset 的 SHA-256（必要时回退到 `SHA256SUMS`）、安全解包并运行新二进制自检，之后才替换当前工具文件。源码或 Actions 的开发构建不会被静默替换；需要主动使用 `--force`。
+
+### 输出与进度
+
+正常交互终端默认使用单行动态进度条，显示百分比、已传输大小、速度和文件进度。管道、脚本或 CI 中自动退化为周期性文本进度，不输出控制字符。
+
+~~~bash
+./azp install -v          # 详细模式：显示逐文件、重试、CDN 等诊断信息
+./azp install -q          # 安静模式：只保留警告、错误和最终结果
+./azp install --no-color  # 禁用 ANSI 颜色
+./azp --version           # 查看工具版本
+~~~
 
 ### 帮助
 
