@@ -170,6 +170,7 @@ func printPlayerStatus(w io.Writer, root, state string, response Response) error
 
 	fmt.Fprintln(w, "Azur Promilia Linux Manager")
 	fmt.Fprintln(w)
+	fmt.Fprintf(w, "  工具版本:   %s\n", toolVersion)
 	fmt.Fprintf(w, "  游戏目录:   %s\n", s.Root)
 	if s.Installed {
 		fmt.Fprintln(w, "  安装状态:   已安装")
