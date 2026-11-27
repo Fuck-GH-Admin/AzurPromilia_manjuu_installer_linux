@@ -66,7 +66,9 @@ amd64 已通过自动引导和 CDN 实测。arm64 下载器可以使用已有官
 ./azp
 ~~~
 
-会打开轻量交互菜单，可用 ↑/↓ 选择、Enter 确认、Esc 或 q 退出。菜单提供状态、安装、更新、校验、修复、预下载、游戏目录、高级选项、工具更新和帮助入口。
+会打开轻量交互菜单，可用 ↑/↓ 选择、Enter 确认、Esc 或 q 退出。菜单提供状态、版本 / 资源、安装、更新、校验、修复、预下载、游戏目录、高级选项、工具更新和帮助入口。
+
+如果本地缓存的官方 metadata 已经显示服务器版本高于本地版本，主菜单会直接给出更新提示；为了避免每次打开菜单都偷偷启动 Wine，菜单本身不会主动刷新官方 metadata。运行 `status`、`resources`、`update` 等命令时会按现有工作流刷新。
 
 “高级选项”可以保存默认下载并发数、默认安装包模式，并显式安装 Shell Completion。保存后的默认值仍可被命令行参数临时覆盖。
 
@@ -95,6 +97,11 @@ amd64 已通过自动引导和 CDN 实测。arm64 下载器可以使用已有官
 ~~~bash
 # 查看安装状态、本地/官方版本、更新状态、下载模式等
 ./azp status
+
+# 浏览官方当前正式版 / 预下载版及可用资源模式
+./azp resources
+# 等价别名
+./azp versions
 
 # 只校验，不下载
 ./azp verify
@@ -148,6 +155,22 @@ Azur Promilia Linux Manager
 
 原来的 `info` 不删除，继续提供详细 package/CDN/launch metadata，主要用于排障和开发。
 
+### 版本 / 资源选择
+
+`azp resources`（别名 `azp versions`）会读取官方当前 metadata：
+
+~~~bash
+./azp resources
+~~~
+
+在真实终端中会进入交互选择：当前正式版可以按服务器推荐模式、REALITY 或 SLICE 安装；已有旧版本时会直接提供 Update；当前版本已安装时提供 Verify / Repair；存在预下载时则提供 Predownload。
+
+在管道或脚本中不会进入交互，而只打印官方版本 / 资源概览表。
+
+这里**不会伪造历史版本列表**：当前官方接口只暴露当前 Released 与当前 Preload，因此菜单也只展示这两类真实资源。
+
+
+
 ### Shell Completion
 
 支持 Bash、Zsh 和 Fish。默认不会偷偷修改 shell 配置；需要时显式安装：
@@ -183,6 +206,10 @@ Azur Promilia Linux Manager
 ~~~
 
 自更新仅针对 Release 包中的 Linux amd64 / arm64 版本。更新前会匹配架构、校验 GitHub Release asset 的 SHA-256（必要时回退到 `SHA256SUMS`）、安全解包并运行新二进制自检，之后才替换当前工具文件。源码或 Actions 的开发构建不会被静默替换；需要主动使用 `--force`。
+
+### 操作完成后的下一步
+
+安装、更新、修复、预下载和校验成功后，CLI 会给针对当前操作的下一步建议。例如安装后提示先 `azp verify` 再按 Proton 文档启动；修复后建议重新校验；预下载完成后明确提示等待正式发布并运行 `azp update`，不会让用户手工覆盖 `_pre_download`。
 
 ### 输出与进度
 
