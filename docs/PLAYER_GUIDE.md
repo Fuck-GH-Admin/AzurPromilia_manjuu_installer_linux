@@ -75,6 +75,8 @@ sha256sum -c SHA256SUMS
 - 未设置游戏目录时，优先引导设置目录；
 - 尚未安装时允许安装，但更新、校验和修复会提示先安装；
 - 已安装后默认高亮 Status，并开放 Update / Verify / Sync；
+- “版本 / 资源”会刷新并展示官方当前 Released / Preload，以及服务器实际提供的 REALITY / SLICE 组合；
+- 如果本地缓存 metadata 已经发现版本落后，主菜单会显示更新提示；菜单本身不会为了检查更新而自动启动 Wine；
 - “高级选项”可以保存默认并发数、默认安装模式，以及显式安装 Shell Completion；
 - “更新工具”调用的是 `azp upgrade`，不会和更新游戏的 `azp update` 混用；
 - 脚本、管道或 CI 等非交互环境裸跑时只输出帮助，不进入菜单。
@@ -137,7 +139,30 @@ Status 默认显示：
 
 Status 不会执行全量 MD5 扫描；需要完整检查时使用 `./azp verify`。详细 package/CDN/launch metadata 仍可通过 `./azp info` 查看。
 
+Status 现在使用对齐的终端表格，并在表格下方给出单条优先级最高的建议：未安装时提示 Install，版本落后时提示 Update，启动入口缺失时提示 Sync，有 Preload 时提示 Predownload，否则提示 Verify。
+
 当前已实测的 SC000 版本使用 REALITY / packageType 2。
+
+### 版本 / 资源选择器
+
+可以单独运行：
+
+~~~bash
+./azp resources
+# 或
+./azp versions
+~~~
+
+交互终端中，第一层选择当前正式版或当前预下载版；第二层只展示当前状态下真正可执行的操作：
+
+- 未安装：按官方推荐模式安装；若服务器同时提供资源，也可显式选 REALITY 或 SLICE；
+- 已安装旧版：提供 Update；
+- 已是当前正式版：提供 Verify / Repair；
+- 当前正式版安装完成且服务器有 Preload：提供 Predownload。
+
+非交互环境只打印概览表，不执行任何选择。
+
+官方接口目前没有任意历史版本目录，因此本工具也不会制造一个“历史版本下载器”。菜单只展示服务器真实返回的 Released 与 Preload。
 
 ## 7. 首次下载和安装
 
@@ -188,6 +213,8 @@ SLICE 模式的当前样本包含 752 个分片，合并 ZIP 为 75,145,275,761 
 `sync` 是 `repair` 的别名；若希望使用原命令，`./azp repair` 完全等价。
 
 Repair 会重新获取当前官方索引，只补齐缺失或损坏的资源。如果服务器已经发布新版本，Repair 会拒绝跨版本修复并提示使用 Update。
+
+成功完成 Install / Update / Repair / Preload / Verify 后，CLI 会根据操作类型打印下一步建议。尤其是 Preload 不会提示手工覆盖文件，而是要求等正式发布后运行 `azp update`，由 Update 复用已经校验过的预下载资源。
 
 ### Shell Completion
 
