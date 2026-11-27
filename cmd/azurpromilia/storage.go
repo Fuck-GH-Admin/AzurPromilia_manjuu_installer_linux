@@ -97,8 +97,8 @@ func preflightFilesWithReserve(root string, files []Entry, reserveBytes int64, o
 	valid := make(map[string]bool, len(files))
 	var required int64
 	for _, entry := range files {
-		if entry.Size < 0 || entry.Size >= maxInt64 || !validMD5(entry.MD5) {
-			return nil, 0, fmt.Errorf("invalid size or MD5 in download manifest: %s", entry.Name)
+		if entry.Size < 0 || entry.Size >= maxInt64 || !validEntryChecksum(entry.MD5) {
+			return nil, 0, fmt.Errorf("invalid size or checksum in download manifest: %s", entry.Name)
 		}
 		p, err := safe(root, entry.Name)
 		if err != nil {
