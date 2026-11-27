@@ -81,6 +81,8 @@ func rememberGamePath(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if err := jpDistinctPath(abs, cfg.YostarPath); err != nil { return "", err }
+	if err := rejectYostarRoot(abs); err != nil { return "", err }
 	cfg.GamePath = abs
 	if err := saveCLIConfig(cfg); err != nil {
 		return "", err
@@ -589,6 +591,7 @@ func runCLI(args []string) error {
 	if gamePath == "" {
 		return fmt.Errorf("no game path configured; first run: %s -p %q %s", prog, "$HOME/Games/AzurPromilia", command)
 	}
+	if err := jpDistinctPath(gamePath, cfg.YostarPath); err != nil { return err }
 	if err := rejectYostarRoot(gamePath); err != nil { return err }
 	commandArgs = append(commandArgs, "--root", gamePath)
 	if opts.Workers != "" {

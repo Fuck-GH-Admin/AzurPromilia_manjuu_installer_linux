@@ -238,8 +238,9 @@ func runYostar(args []string) error {
     }
     // Install and repair both converge to the latest official manifest. Do not
     // delete old/unknown files until cross-version behavior is live-validated.
-    if e=runFiles(ctx,abs,m,*workers,false);e!=nil{return e}
+    // Claim the directory before the first resource write, including interrupted installs.
     if e=os.MkdirAll(state,0755);e!=nil{return e}
+    if e=runFiles(ctx,abs,m,*workers,false);e!=nil{return e}
     f,e:=os.CreateTemp(state,"manifest-*.tmp");if e!=nil{return e}
     defer os.Remove(f.Name())
     e=json.NewEncoder(f).Encode(m)
